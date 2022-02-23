@@ -42,17 +42,18 @@ void place_detector::test_function()
   scanR_.resize(0);
   scanR_.push_back(20.5);
   scanR_.push_back(20.5);
-  scanR_.push_back(20.5);
+  scanR_.push_back(50.5);
   scanR_.push_back(20.5);
 
-  double scanAngleMin_ = pi_/4;
-  double scanAngleMax_ = pi_/4 + pi_/2 + pi_/2 + pi_/2;
-  double scanAngleInc_ = pi_/2;
+  scanAngleMin_ = pi_/4;
+  scanAngleMax_ = pi_/4 + pi_/2 + pi_/2 + pi_/2;
+  scanAngleInc_ = pi_/2;
 
-  update_feature_vec_a();
-  cout << featureVecA_;
   update_feature_vec_b();
-  cout << featureVecB_;
+  cout << "done" << endl;
+  cout << scanP_ << endl;
+  //update_feature_vec_b();
+  cout << featureVecB_ << endl;
 }
 
 // **********************************************************************************
@@ -113,6 +114,8 @@ void place_detector::update_feature_vec_b()
   featureVecB_.push_back( area_perimeter.first / area_perimeter.second );
 
   pair<double,double> cogVal = cog();
+  cout << "cog: " << cogVal << endl;
+
   vector<double> secondOrderCentralMoments(3,0);
   vector<double> sevenInvariants = seven_invariants(cogVal, secondOrderCentralMoments);
   featureVecB_.insert( featureVecB_.end(), sevenInvariants.begin(), sevenInvariants.end() );
@@ -121,10 +124,13 @@ void place_detector::update_feature_vec_b()
   featureVecB_.push_back( eccentricity(area_perimeter.first, secondOrderCentralMoments) );
 
   double circumCircleArea = circumscribed_circle_area(cogVal);
+  cout << "circumcircle area: " << circumCircleArea << endl; 
   featureVecB_.push_back( form_factor(area_perimeter.first, circumCircleArea) );
 
   vector<double> convexHullInds = convex_hull_indices(longestRangeIndx);
+  cout << "convex hull indices: " << convexHullInds << endl;
   double convexPerimeter = convex_perimeter(convexHullInds);
+  cout << "convex perimeter: " << convexPerimeter << endl;
   featureVecB_.push_back( roundness(area_perimeter.first, convexPerimeter) );
 }
 
@@ -179,25 +185,29 @@ vector<double> place_detector::convex_hull_indices(const int& longestRangeIndx)
     return vector<double>(0,0);
   if(scanP_.size() == 1)
   {
-    convHullInds.push_back(0);
+    convHullInds.push_back(longestRangeIndx);
     return convHullInds;
   }
   if(scanP_.size() == 2)
   {
-    convHullInds.push_back(0);
-    convHullInds.push_back(1);
+    convHullInds.push_back(longestRangeIndx);
+    convHullInds.push_back( (longestRangeIndx+1) % scanP_.size() );
     return convHullInds;
   }
 
-  convHullInds.push_back(0);
-  convHullInds.push_back(1);
-  convHullInds.push_back(2);
+  convHullInds.push_back( longestRangeIndx );
+  convHullInds.push_back( (longestRangeIndx+1) % scanP_.size() );
+  convHullInds.push_back( (longestRangeIndx+2) % scanP_.size() );
 
-  for(int i=3; i<scanP_.size(); i++)
+  for(int i = 3; i<scanP_.size(); i++)
   {
-    while (convHullInds.size()>1 && orientation( scanP_[scanP_.size()-2] , scanP_.back(), scanP_[i]) != 2)
+    int indx = (longestRangeIndx+i) % scanP_.size();
+    int lastIndx = (longestRangeIndx+i-1) % scanP_.size();
+    int secondToLastIndx = (longestRangeIndx+i-2) % scanP_.size();
+
+    while (convHullInds.size()>1 && orientation( scanP_[secondToLastIndx] , scanP_[lastIndx], scanP_[indx]) != 2)
          convHullInds.pop_back();
-    convHullInds.push_back(i);
+    convHullInds.push_back(indx);
   }
   
   return convHullInds;
@@ -347,7 +357,7 @@ pair<double,double> place_detector::area_perimeter_polygon(double& longestRangeI
   yCoordNxt = scanR_[0]*sin(thetaNxt);
 
   scanP_.push_back( make_pair(xCoordNxt, yCoordNxt) );
-  longestRangeIndx = scanR_.back();
+  longestRangeIndx = scanR_.size() - 1;
 
   for(int i=0; i<scanR_.size()-1; i++)
   {
@@ -363,10 +373,10 @@ pair<double,double> place_detector::area_perimeter_polygon(double& longestRangeI
 
     sumA += ( xCoord * yCoordNxt );
     sumB += ( yCoord * xCoordNxt );
-    perimeter += sqrt ( pow(xCoordNxt - xCoord, 2) + pow(yCoordNxt - yCoord, 2) );
+    perimeter +=  dist( make_pair(xCoord, yCoord), make_pair(xCoordNxt, yCoordNxt) );
 
-    if(longestRangeIndx < scanR_[i])
-      longestRangeIndx = scanR_[i];
+    if( scanR_[longestRangeIndx] < scanR_[i])
+      longestRangeIndx = i;
   }
 
   theta = thetaNxt;
@@ -374,12 +384,12 @@ pair<double,double> place_detector::area_perimeter_polygon(double& longestRangeI
   yCoord = yCoordNxt;
 
   thetaNxt = scanAngleMin_;
-  xCoordNxt = scanR_[0]*cos(theta);
-  yCoordNxt = scanR_[0]*sin(theta);
+  xCoordNxt = scanR_[0]*cos(thetaNxt);
+  yCoordNxt = scanR_[0]*sin(thetaNxt);
 
   sumA += ( xCoord * yCoordNxt );
   sumB += ( yCoord * xCoordNxt );
-  perimeter += sqrt ( pow(xCoordNxt - xCoord, 2) + pow(yCoordNxt - yCoord, 2) );
+  perimeter += dist( make_pair(xCoord, yCoord), make_pair(xCoordNxt, yCoordNxt) );
 
   result.first = (sumA - sumB) / 2.0;
   result.second = perimeter;
@@ -390,7 +400,7 @@ pair<double,double> place_detector::area_perimeter_polygon(double& longestRangeI
 // **********************************************************************************
 void place_detector::update_feature_vec_a()
 {
-  featureVecA_.resize(0);;
+  featureVecA_.resize(0);
 
   pair<double, double> meanSdev = mean_sdev_range_diff(DBL_MAX);
 
@@ -400,7 +410,7 @@ void place_detector::update_feature_vec_a()
   const double delRange = 5;
   const double maxRange = 50;
 
-  for(double i=0; i<maxRange; i+=delRange)
+  for(double i=delRange; i<=maxRange; i+=delRange)
   {
     pair<double, double> meanSdev = mean_sdev_range_diff(i);
 
@@ -412,19 +422,19 @@ void place_detector::update_feature_vec_a()
   double sqSum = inner_product(scanR_.begin(), scanR_.end(), scanR_.begin(), 0.0);
   double sdev = sqrt(sqSum / scanR_.size() - featureVecA_.back() * featureVecA_.back());
   featureVecA_.push_back(sdev);
+  
+  const double delGap1 = 1.0;
+  const double maxGap1 = 20.0;
 
-  const double delGap1 = 0.5;
-  const double maxGap1 = 20;
-
-  for(double i=0; i<maxGap1; i+=delGap1)
+  for(double i=delGap1; i<=maxGap1; i+=delGap1)
   {
     int nGaps = n_gaps(i);
     featureVecA_.push_back(nGaps);
   }
 
-  const double delGap2 = 5;
-  const double maxGap2 = 50;
-  for(double i=maxGap1; i<maxGap2; i+=delGap2)
+  const double delGap2 = 5.0;
+  const double maxGap2 = 50.0;
+  for(double i=maxGap1+delGap2; i<=maxGap2; i+=delGap2)
   {
     int nGaps = n_gaps(i);
     featureVecA_.push_back(nGaps);
@@ -448,7 +458,7 @@ int place_detector::n_gaps(const double& thresh)
 pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
 {
   vector<double> lenDiff;
-  lenDiff.push_back( abs(scanR_[0] - scanR_.back()) );
+  lenDiff.push_back( abs( min(scanR_[0], thresh) - min(scanR_.back(), thresh) ) );
 
   for(int i=0; i<scanR_.size()-1; i++)
     lenDiff.push_back( abs( min(scanR_[i+1], thresh) - min(scanR_[i], thresh) ) );
@@ -492,7 +502,8 @@ void write_feature_set_to_file()
 */
 
 // **********************************************************************************
-ostream& operator<<(ostream& os, const vector<double>& vecIn)
+template <typename T>
+ostream& operator<<(ostream& os, const vector<T>& vecIn)
 {
   if(vecIn.size() < 1)
     return os;
@@ -501,6 +512,28 @@ ostream& operator<<(ostream& os, const vector<double>& vecIn)
     os << vecIn[i] << ", ";
 
   os << vecIn.back();
+  return os;
+}
+
+// **********************************************************************************
+template <typename T1, typename T2>
+ostream& operator<<(ostream& os, const vector<pair<T1,T2>>& vecIn)
+{
+  if(vecIn.size() < 1)
+    return os;
+
+  for(int i=0; i<vecIn.size()-1; i++)
+    os << "(" << vecIn[i].first << ", " << vecIn[i].second << "), ";
+
+    os << "(" << vecIn.back().first << ", " << vecIn.back().second << ")";
+  return os;
+}
+
+// **********************************************************************************
+template <typename T1, typename T2>
+ostream& operator<<(ostream& os, const pair<T1,T2>& pairIn)
+{
+  os << "(" << pairIn.first << ", " << pairIn.second << ")";
   return os;
 }
 
