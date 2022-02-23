@@ -4,6 +4,9 @@
 place_detector::place_detector(ros::NodeHandle* nh)
 {
   nh_ = nh;
+  test_function();
+  return;
+
   load_params();
 
   if(dataLabelMode_)
@@ -32,6 +35,24 @@ void place_detector::load_params()
     while(!nh_->getParam("folder_path", filePath_));
   else
     nh_->getParam("folder_path", filePath_);
+}
+// **********************************************************************************
+void place_detector::test_function()
+{
+  scanR_.resize(0);
+  scanR_.push_back(20.5);
+  scanR_.push_back(20.5);
+  scanR_.push_back(20.5);
+  scanR_.push_back(20.5);
+
+  double scanAngleMin_ = pi_/4;
+  double scanAngleMax_ = pi_/4 + pi_/2 + pi_/2 + pi_/2;
+  double scanAngleInc_ = pi_/2;
+
+  update_feature_vec_a();
+  cout << featureVecA_;
+  update_feature_vec_b();
+  cout << featureVecB_;
 }
 
 // **********************************************************************************
@@ -469,6 +490,19 @@ void write_feature_set_to_file()
 	dataFile_.close();
 }
 */
+
+// **********************************************************************************
+ostream& operator<<(ostream& os, const vector<double>& vecIn)
+{
+  if(vecIn.size() < 1)
+    return os;
+
+  for(int i=0; i<vecIn.size()-1; i++)
+    os << vecIn[i] << ", ";
+
+  os << vecIn.back();
+  return os;
+}
 
 // **********************************************************************************
 void place_detector::ros_info(const string& s)

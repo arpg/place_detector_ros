@@ -60,7 +60,10 @@ public:
   void update_feature_vec_a();
   int n_gaps(const double& thresh);
   pair<double, double> mean_sdev_range_diff(const float& thresh);
+  void test_function();
   void ros_info(const string& s);
   void ros_warn(const string& s);
 
 };
+
+ostream& operator<<(ostream& os, const vector<double>& vecIn);
