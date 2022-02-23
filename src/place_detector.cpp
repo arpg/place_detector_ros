@@ -45,8 +45,114 @@ vector<double> feature_set_b(const vector<double>& scanMeas)
   featureSet.push_back(area_perimeter.second);
 
   featureSet.push_back( area_perimeter.first / area_perimeter.second );
+}
 
+// **********************************************************************************
+// the ratio of the area of an object to the area of a circle with the same perimeter
+double compactness(const double& area, const double& perimeter)
+{
+  return (4*pi_*area) / (perimeter*perimeter);
+}
 
+// **********************************************************************************
+double eccentricity(const double& mu_0_2, const double& mu_2_0, const double& mu_1_1, const double& area)
+{
+  return ( pow(mu_0_2 - mu_2_0, 2) + 4*mu_1_1 ) / area;
+}
+
+// **********************************************************************************
+// the ratio of the area of an object to the area of a circle with the same convex perimeter
+double roundness(const double& area, const double& convexPerimeter)
+{
+  return (4*pi_*area) / (convexPerimeter*convexPerimeter);
+}
+
+// **********************************************************************************
+// perimeter of the convex hull that encloses the object
+double convex_perimeter(const vector<double>& convHullInds, const vector<pair<double,double>& scanMeasCoords)
+{
+  double sum = 0;
+  for(int i=0; i<convHullInds.size()-1; i++)
+  {
+    int hullIndx = convHullInds[i];
+    int hullIndxNxt = convHullInds[i+1];
+    sum += dist( scanMeasCoords[hullIndx], scanMeasCoords[hullIndxNxt] );
+  }
+
+  sum += dist( scanMeasCoords.back(), scanMeasCoords[0] );
+
+  return sum;
+}
+
+// **********************************************************************************
+double dist(const pair<double, double>& pt1, const pair<double, double>& pt2)
+{
+  return sqrt( pow(pt2.first-pt1.first,2) + pow(pt2.second-pt1.second,2) );
+}
+
+// **********************************************************************************
+vector<double> convex_hull_indices(const int& longestRangeIndx, const vector<pair<double,double>& scanMeasCoords)
+{
+  vector<double> convHullInds;
+  if(scanMeas.size() == 0)
+    return;
+  if(scanMeas.size() == 1)
+  {
+    convHullInds.push_back(0);
+    return convexHullIndices;
+  }
+  if(scanMeas.size() == 2)
+  {
+    convHullInds.push_back(0);
+    convHullInds.push_back(1);
+    return convexHullIndices;
+  }
+
+  convHullInds.push_back(0);
+  convHullInds.push_back(1);
+  convHullInds.push_back(2);
+
+  for(int i=3; i<scanMeas.size(); i++)
+  {
+    while (convHullInds.size()>1 && orientation( scanMeasCoords[scanMeasCoords.size()-2] , scanMeasCoords.back(), scanMeasCoords[i]) != 2)
+         convHullInds.pop_back();
+    convHullInds.push_back(i);
+  }
+  
+  return convHullInds;
+}
+
+// **********************************************************************************
+// https://www.geeksforgeeks.org/convex-hull-set-2-graham-scan/
+int orientation(const pair<double,double>& p, const pair<double,double>& q, const pair<double,double>& r)
+{
+  int val = (q.second - p.second) * (r.first - q.first) - (q.first - p.first) * (r.second - q.second);
+ 
+  if (val == 0) return 0;  // collinear
+    return (val > 0)? 1: 2; // clock or counterclock wise
+}
+
+// **********************************************************************************
+// the ratio between the area of the block and the area of the circumscribed circle
+double form_factor(const double& area, const double& circumCircleArea)
+{
+  return area / circumCircleArea;
+}
+
+// **********************************************************************************
+double circumscribed_circle_area(const pair<double,double>& cog, const vector<pair<double,double>>& scanMeasCoords)
+{
+  double maxDist = DBL_MIN;
+
+  for(int i=0; i<scanMeasCoords.size(); i++)
+  {
+    double dist = dist( cog, scanMeasCoords[i] );
+
+    if(dist > maxDist)
+      maxDist = dist;
+  }
+
+  return pi_*maxDist*maxDist;
 }
 
 // **********************************************************************************
