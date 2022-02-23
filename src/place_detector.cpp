@@ -1,7 +1,7 @@
 #include "place_detector.h"
 
 // **********************************************************************************
-void place_detector::place_detector(ros::NodeHandle* nh)
+place_detector::place_detector(ros::NodeHandle* nh)
 {
   nh_ = nh;
   load_params();
@@ -16,7 +16,7 @@ void place_detector::place_detector(ros::NodeHandle* nh)
 }
 
 // **********************************************************************************
-void place_detector::~place_detector()
+place_detector::~place_detector()
 {
   if(dataLabelMode_)
     dataFile_.close();
@@ -38,14 +38,14 @@ void place_detector::load_params()
 void place_detector::label_cb(const std_msgs::String& labelMsg)
 {
 	mostRecentLabel_ = labelMsg.data;
-	mostRecentLabelTime_ = ros:Time::now().toSec();
+	mostRecentLabelTime_ = ros::Time::now().toSec();
 }
 
 // **********************************************************************************
 void place_detector::scan_cb(const sensor_msgs::LaserScan& scanMsg)
 {
   if(dataLabelMode_)
-    scan_cb_data_label_mode(const sensor_msgs::LaserScan& scanMsg);
+    scan_cb_data_label_mode(scanMsg);
   //else ...
 }
 
@@ -72,10 +72,10 @@ void place_detector::scan_cb_data_label_mode(const sensor_msgs::LaserScan& scanM
   update_feature_vec_b();
 
 	for(int i=0; i<featureVecA_.size(); i++)
-		dataFile << ", " << to_string(featureVecA_[i]); 
+		dataFile_ << ", " << to_string(featureVecA_[i]); 
 
   for(int i=0; i<featureVecB_.size(); i++)
-		dataFile << ", " << to_string(featureVecB_[i]); 
+		dataFile_ << ", " << to_string(featureVecB_[i]); 
 		
 	dataFile_ << endl;
 }
@@ -85,20 +85,21 @@ void place_detector::update_feature_vec_b()
 {
   featureVecB_.resize(0);
 
-  pair<double,double> area_perimeter = area_perimeter_polygon(); // updates scanP_ to be used by later functions
+  double longestRangeIndx;
+  pair<double,double> area_perimeter = area_perimeter_polygon(longestRangeIndx); // updates scanP_ to be used by later functions
   featureVecB_.push_back(area_perimeter.first);
   featureVecB_.push_back(area_perimeter.second);
   featureVecB_.push_back( area_perimeter.first / area_perimeter.second );
 
-  double cog = cog();
+  pair<double,double> cogVal = cog();
   vector<double> secondOrderCentralMoments(3,0);
-  vector<double> sevenInvariants = seven_invariants(cog, secondOrderCentralMoments);
+  vector<double> sevenInvariants = seven_invariants(cogVal, secondOrderCentralMoments);
   featureVecB_.insert( featureVecB_.end(), sevenInvariants.begin(), sevenInvariants.end() );
 
   featureVecB_.push_back( compactness(area_perimeter.first, area_perimeter.second) );
   featureVecB_.push_back( eccentricity(area_perimeter.first, secondOrderCentralMoments) );
 
-  double circumCircleArea = circumscribed_circle_area(cog);
+  double circumCircleArea = circumscribed_circle_area(cogVal);
   featureVecB_.push_back( form_factor(area_perimeter.first, circumCircleArea) );
 
   vector<double> convexHullInds = convex_hull_indices(longestRangeIndx);
@@ -154,17 +155,17 @@ vector<double> place_detector::convex_hull_indices(const int& longestRangeIndx)
 {
   vector<double> convHullInds;
   if(scanP_.size() == 0)
-    return;
+    return vector<double>(0,0);
   if(scanP_.size() == 1)
   {
     convHullInds.push_back(0);
-    return convexHullIndices;
+    return convHullInds;
   }
   if(scanP_.size() == 2)
   {
     convHullInds.push_back(0);
     convHullInds.push_back(1);
-    return convexHullIndices;
+    return convHullInds;
   }
 
   convHullInds.push_back(0);
@@ -205,10 +206,10 @@ double place_detector::circumscribed_circle_area(const pair<double,double>& cog)
 
   for(int i=0; i<scanP_.size(); i++)
   {
-    double dist = dist( cog, scanP_[i] );
+    double distance = dist( cog, scanP_[i] );
 
-    if(dist > maxDist)
-      maxDist = dist;
+    if(distance > maxDist)
+      maxDist = distance;
   }
 
   return pi_*maxDist*maxDist;
@@ -220,7 +221,7 @@ pair<double, double> place_detector::cog()
 {
   double cogX = 0, cogY = 0;
 
-  for(int i=0; i<scanP_; i++)
+  for(int i=0; i<scanP_.size(); i++)
   {
     cogX += scanP_.size() * scanP_[i].first;
     cogY += scanP_[i].second;
@@ -274,15 +275,18 @@ vector<double> place_detector::seven_invariants(const pair<double,double>& cog, 
   double mu_1_2 = mu_1_2_x*mu_1_2_y, mu_2_1 = mu_2_1_x*mu_2_1_y;
   double mu_0_3 = mu_0_3_x*mu_0_3_y, mu_3_0 = mu_3_0_x*mu_3_0_y;
 
-  double lamda_2_0 = 2, lamda_0_2 = 2;
-  double lamda_1_1 = 2;
-  double lamda_1_2 = 2.5, lamda_2_1 = 2.5;
-  double lamda_0_3 = 2.5, lamda_3_0 = 2.5; 
+  double lambda_2_0 = 2, lambda_0_2 = 2;
+  double lambda_1_1 = 2;
+  double lambda_1_2 = 2.5, lambda_2_1 = 2.5;
+  double lambda_0_3 = 2.5, lambda_3_0 = 2.5; 
 
-  double eta_2_0 = mu_2_0/pow(mu_0_0,lambda_2_0), eta_0_2 = mu_0_2/pow(mu_0_0,lambda_0_2);
+  double eta_2_0 = mu_2_0/pow(mu_0_0,lambda_2_0);
+  double eta_0_2 = mu_0_2/pow(mu_0_0,lambda_0_2);
   double eta_1_1 = mu_1_1/pow(mu_0_0,lambda_1_1);
-  double eta_1_2 = mu_1_2/pow(mu_0_0,lambda_1_2), eta_2_1 = mu_2_1/pow(mu_0_0,lambda_2_1);
-  double eta_0_3 = mu_0_3/pow(mu_0_0,lambda_0_3), eta_3_0 = mu_3_0/pow(mu_0_0,lambda_3_0); 
+  double eta_1_2 = mu_1_2/pow(mu_0_0,lambda_1_2);
+  double eta_2_1 = mu_2_1/pow(mu_0_0,lambda_2_1);
+  double eta_0_3 = mu_0_3/pow(mu_0_0,lambda_0_3);
+  double eta_3_0 = mu_3_0/pow(mu_0_0,lambda_3_0); 
 
   vector<double> moments(7, 0);
 
@@ -308,20 +312,21 @@ vector<double> place_detector::seven_invariants(const pair<double,double>& cog, 
 }
 
 // **********************************************************************************
-pair<double,double> place_detector::area_perimeter_polygon()
+pair<double,double> place_detector::area_perimeter_polygon(double& longestRangeIndx)
 {
   pair<double,double> result;
   scanP_.resize(0);
 
   double sumA = 0.0, sumB = 0.0, perimeter = 0;
 
-  double theta, xCoord, yCoord, xCoordNxt, yCoordNxt;
+  double theta, thetaNxt, xCoord, yCoord, xCoordNxt, yCoordNxt;
 
   thetaNxt = scanAngleMin_;
-  xCoordNxt = scanR_[0]*cos(theta);
-  yCoordNxt = scanR_[0]*sin(theta);
+  xCoordNxt = scanR_[0]*cos(thetaNxt);
+  yCoordNxt = scanR_[0]*sin(thetaNxt);
 
-  scanP_.push_back( make_pair(xCoordNxt. yCoordNxt) );
+  scanP_.push_back( make_pair(xCoordNxt, yCoordNxt) );
+  longestRangeIndx = scanR_.back();
 
   for(int i=0; i<scanR_.size()-1; i++)
   {
@@ -330,14 +335,17 @@ pair<double,double> place_detector::area_perimeter_polygon()
     yCoord = yCoordNxt;
 
     thetaNxt = scanAngleMin_ + scanAngleInc_ * (i+1);
-    xCoordNxt = scanR_[i+1]*cos(theta);
-    yCoordNxt = scanR_[i+1]*sin(theta);
+    xCoordNxt = scanR_[i+1]*cos(thetaNxt);
+    yCoordNxt = scanR_[i+1]*sin(thetaNxt);
 
-    scanP_.push_back( make_pair(xCoordNxt. yCoordNxt) );
+    scanP_.push_back( make_pair(xCoordNxt, yCoordNxt) );
 
     sumA += ( xCoord * yCoordNxt );
     sumB += ( yCoord * xCoordNxt );
     perimeter += sqrt ( pow(xCoordNxt - xCoord, 2) + pow(yCoordNxt - yCoord, 2) );
+
+    if(longestRangeIndx < scanR_[i])
+      longestRangeIndx = scanR_[i];
   }
 
   theta = thetaNxt;
@@ -381,7 +389,7 @@ void place_detector::update_feature_vec_a()
 
   featureVecA_.push_back( accumulate(scanR_.begin(), scanR_.end(), 0.0) / scanR_.size() );
   double sqSum = inner_product(scanR_.begin(), scanR_.end(), scanR_.begin(), 0.0);
-  double sdev = sqrt(sqSum / scanR_.size() - mean * mean);
+  double sdev = sqrt(sqSum / scanR_.size() - featureVecA_.back() * featureVecA_.back());
   featureVecA_.push_back(sdev);
 
   const double delGap1 = 0.5;
@@ -416,7 +424,7 @@ int place_detector::n_gaps(const double& thresh)
 }
 
 // **********************************************************************************
-pair<double, double> place_detector::mean_sdev_range_diff(const double& thresh)
+pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
 {
   vector<double> lenDiff;
   lenDiff.push_back( abs(scanR_[0] - scanR_.back()) );
@@ -465,13 +473,13 @@ void write_feature_set_to_file()
 // **********************************************************************************
 void place_detector::ros_info(const string& s)
 {
-	ROS_INFO("s: " + s, nh_->getNamespace().c_str());	
+	ROS_INFO("%s: %s", nh_->getNamespace().c_str(), s.c_str());	
 }
 
 // **********************************************************************************
 void place_detector::ros_warn(const string& s)
 {
-	ROS_WARN("s: " + s, nh_->getNamespace().c_str());	
+	ROS_WARN("%s: %s", nh_->getNamespace().c_str(), s.c_str());		
 }
 
 // **********************************************************************************

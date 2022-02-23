@@ -1,6 +1,9 @@
 #include "ros/ros.h"
 #include "sensor_msgs/LaserScan.h"
-#include "fstream"
+#include "std_msgs/String.h"
+
+#include <fstream>
+#include <numeric>
 
 using namespace std;
 
@@ -15,26 +18,28 @@ private:
 
   bool dataLabelMode_ = false;
 
-  ifstream dataFile_;
+  ofstream dataFile_;
   //map<string, int> labelToIndx_;
 
   double scanAngleMin_ = 0;
   double scanAngleMax_ = 0;
   double scanAngleInc_ = 0;
 
-  vector<double> scanR_; // ranges
+  vector<float> scanR_; // ranges
   vector<pair<double,double>> scanP_; // polygon, cartesian
 
   vector<double> featureVecA_;
   vector<double> featureVecB_;
 
   string mostRecentLabel_ = "";
+  double mostRecentLabelTime_ = 0.0;
 
   string filePath_ = ""; // file path to write feature set to
 
+  double pi_ = atan(1)*4;
 public:
-  void place_detector(ros::NodeHandle* nh);
-  void ~place_detector();
+  place_detector(ros::NodeHandle* nh);
+  ~place_detector();
   void load_params();
   void label_cb(const std_msgs::String& labelMsg);
   void scan_cb(const sensor_msgs::LaserScan& scanMsg);
@@ -51,14 +56,11 @@ public:
   double circumscribed_circle_area(const pair<double,double>& cog);
   pair<double, double> cog();
   vector<double> seven_invariants(const pair<double,double>& cog, vector<double>& secondOrderCentralMoments);
-  pair<double,double> area_perimeter_polygon();
+  pair<double,double> area_perimeter_polygon(double& longestRangeIndx);
   void update_feature_vec_a();
   int n_gaps(const double& thresh);
-  pair<double, double> mean_sdev_range_diff(const double& thresh);
-
-
+  pair<double, double> mean_sdev_range_diff(const float& thresh);
   void ros_info(const string& s);
   void ros_warn(const string& s);
-  void load_params();
-  void get_feature_set();
+
 };
