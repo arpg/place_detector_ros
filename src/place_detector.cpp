@@ -4,9 +4,6 @@
 place_detector::place_detector(ros::NodeHandle* nh)
 {
   nh_ = nh;
-  test_function();
-  return;
-
   load_params();
 
   if(dataLabelMode_)
@@ -16,6 +13,9 @@ place_detector::place_detector(ros::NodeHandle* nh)
   labelSub_ = nh_->subscribe("label_in", 1, &place_detector::label_cb, this);
 
   labelPub_ = nh_->advertise<std_msgs::String>("label_out", 1);
+
+  test_function();
+  return;
 }
 
 // **********************************************************************************
@@ -29,12 +29,14 @@ void place_detector::load_params()
 {
   ros_info("Waiting for params to load ...");
 
-  while(!nh_->getParam("data_collect_mode", dataLabelMode_));
+  while(!nh_->getParam("data_label_mode", dataLabelMode_));
 
   if(dataLabelMode_)
-    while(!nh_->getParam("folder_path", filePath_));
+    while(!nh_->getParam("file_path", filePath_));
   else
-    nh_->getParam("folder_path", filePath_);
+    nh_->getParam("file_path", filePath_);
+
+  ros_info("Params loaded");
 }
 // **********************************************************************************
 void place_detector::test_function()
@@ -53,11 +55,15 @@ void place_detector::test_function()
   scanAngleMax_ = 0 + pi_/4*7;
   scanAngleInc_ = pi_/4;
 
+  update_feature_vec_a();
   update_feature_vec_b();
-  cout << "done" << endl;
-  cout << scanP_ << endl;
+
+  mostRecentLabel_ = "corridor";
+  write_feature_vecs_to_file();
+  //cout << "done" << endl;
+  //cout << scanP_ << endl;
   //update_feature_vec_b();
-  cout << featureVecB_ << endl;
+  //cout << featureVecB_ << endl;
 }
 
 // **********************************************************************************
@@ -109,16 +115,22 @@ void place_detector::scan_cb_data_label_mode(const sensor_msgs::LaserScan& scanM
 // **********************************************************************************
 void place_detector::update_feature_vec_b()
 {
+  ros::Time startTime = ros::Time::now();
+
   featureVecB_.resize(0);
 
   double longestRangeIndx;
   pair<double,double> area_perimeter = area_perimeter_polygon(longestRangeIndx); // updates scanP_ to be used by later functions
   featureVecB_.push_back(area_perimeter.first);
   featureVecB_.push_back(area_perimeter.second);
+
+  if( abs(area_perimeter.second) < 1e-6 )
+    ros_warn("Scan perimeter is zero");
+
   featureVecB_.push_back( area_perimeter.first / area_perimeter.second );
 
   pair<double,double> cogVal = cog();
-  cout << "cog: " << cogVal << endl;
+  //cout << "cog: " << cogVal << endl;
 
   vector<double> secondOrderCentralMoments(3,0);
   vector<double> sevenInvariants = seven_invariants(cogVal, secondOrderCentralMoments);
@@ -128,14 +140,16 @@ void place_detector::update_feature_vec_b()
   featureVecB_.push_back( eccentricity(area_perimeter.first, secondOrderCentralMoments) );
 
   double circumCircleArea = circumscribed_circle_area(cogVal);
-  cout << "circumcircle area: " << circumCircleArea << endl; 
+  //cout << "circumcircle area: " << circumCircleArea << endl; 
   featureVecB_.push_back( form_factor(area_perimeter.first, circumCircleArea) );
 
   vector<double> convexHullInds = convex_hull_indices(longestRangeIndx);
-  cout << "convex hull indices: " << convexHullInds << endl;
+  //cout << "convex hull indices: " << convexHullInds << endl;
   double convexPerimeter = convex_perimeter(convexHullInds);
-  cout << "convex perimeter: " << convexPerimeter << endl;
+  //cout << "convex perimeter: " << convexPerimeter << endl;
   featureVecB_.push_back( roundness(area_perimeter.first, convexPerimeter) );
+
+  featureVecBComputeTime_ = ( ros::Time::now() - startTime ).toSec();
 }
 
 // **********************************************************************************
@@ -146,15 +160,26 @@ double place_detector::compactness(const double& area, const double& perimeter)
 }
 
 // **********************************************************************************
+// https://docs.baslerweb.com/visualapplets/files/manuals/content/examples%20imagemoments.html
 double place_detector::eccentricity(const double& area, const vector<double>& secondOrderCentralMoments)
 {
-  return ( pow(secondOrderCentralMoments[0] - secondOrderCentralMoments[1], 2) + 4*secondOrderCentralMoments[2] ) / area;
+  double mu_0_2 = secondOrderCentralMoments[0];
+  double mu_2_0 = secondOrderCentralMoments[1];
+  double mu_1_1 = secondOrderCentralMoments[2];
+
+  if( abs(mu_2_0 + mu_0_2) < 1e-6 )
+    ros_warn("Eccentricity denominator zero");
+  double ecc = pow(mu_2_0 - mu_0_2, 2) + 4*mu_1_1*mu_1_1;
+  return ecc / pow(mu_2_0 + mu_0_2, 2); 
+  //return ( pow(secondOrderCentralMoments[0] - secondOrderCentralMoments[1], 2) + 4*secondOrderCentralMoments[2] ) / area;
 }
 
 // **********************************************************************************
 // the ratio of the area of an object to the area of a circle with the same convex perimeter
 double place_detector::roundness(const double& area, const double& convexPerimeter)
 {
+  if( abs(convexPerimeter) < 1e-6 )
+    ros_warn("Convex perimeter zero");
   return (4*pi_*area) / (convexPerimeter*convexPerimeter);
 }
 
@@ -236,6 +261,8 @@ int place_detector::orientation(const pair<double,double>& p, const pair<double,
 // the ratio between the area of the block and the area of the circumscribed circle
 double place_detector::form_factor(const double& area, const double& circumCircleArea)
 {
+  if( abs(circumCircleArea) < 1e-6)
+    ros_warn("Circum circle area is zero");
   return area / circumCircleArea;
 }
 
@@ -256,7 +283,6 @@ double place_detector::circumscribed_circle_area(const pair<double,double>& cog)
 }
 
 // **********************************************************************************
-// https://towardsdatascience.com/introduction-to-the-invariant-moment-and-its-application-to-the-feature-extraction-ee991f39ec
 pair<double, double> place_detector::cog()
 {
   double cogX = 0, cogY = 0;
@@ -267,6 +293,9 @@ pair<double, double> place_detector::cog()
     cogY += scanP_[i].second;
   }
 
+  if( scanP_.size() < 1 )
+    ros_warn("Scan size is zero");
+
   cogX = cogX / ( scanP_.size() * scanP_.size() ) ;
   cogY = cogY / scanP_.size();
 
@@ -274,11 +303,11 @@ pair<double, double> place_detector::cog()
 }
 
 // **********************************************************************************
+// Correct One => https://www.mathworks.com/matlabcentral/fileexchange/33975-the-seven-invariant-moments
+// https://towardsdatascience.com/introduction-to-the-invariant-moment-and-its-application-to-the-feature-extraction-ee991f39ec
 vector<double> place_detector::seven_invariants(const pair<double,double>& cogVal, vector<double>& secondOrderCentralMoments)
 {
   const double mu_0_0 = p_q_th_order_central_moment(0,0, cogVal);//p_q_th_order_central_moment(0,0, cog);
-
-  cout << "mu_0_0: " << mu_0_0 << endl;
 
   double mu_2_0 = p_q_th_order_central_moment(2,0, cogVal);
   double mu_0_2 = p_q_th_order_central_moment(0,2, cogVal);
@@ -288,12 +317,13 @@ vector<double> place_detector::seven_invariants(const pair<double,double>& cogVa
   double mu_0_3 = p_q_th_order_central_moment(0,3, cogVal);
   double mu_3_0 = p_q_th_order_central_moment(3,0, cogVal);
 
-  cout << "mu_3_0: " << mu_3_0 << endl;
-
   double lambda_2_0 = 2, lambda_0_2 = 2;
   double lambda_1_1 = 2;
   double lambda_1_2 = 2.5, lambda_2_1 = 2.5;
   double lambda_0_3 = 2.5, lambda_3_0 = 2.5; 
+
+  if( abs(mu_0_0) < 1e-6 )
+    ros_warn("Mu_0_0 is zero");
 
   double eta_2_0 = mu_2_0/pow(mu_0_0,lambda_2_0);
   double eta_0_2 = mu_0_2/pow(mu_0_0,lambda_0_2);
@@ -302,8 +332,6 @@ vector<double> place_detector::seven_invariants(const pair<double,double>& cogVa
   double eta_2_1 = mu_2_1/pow(mu_0_0,lambda_2_1);
   double eta_0_3 = mu_0_3/pow(mu_0_0,lambda_0_3);
   double eta_3_0 = mu_3_0/pow(mu_0_0,lambda_3_0); 
-
-  cout << "eta_3_0: " << eta_3_0 << endl;
 
   vector<double> moments(7, 0);
 
@@ -339,11 +367,11 @@ double place_detector::p_q_th_order_central_moment(const int& p, const int& q, c
   double sum = 0.0;
   for( int i=0; i<scanP_.size(); i++ )
   {
-      if(p==3 && q == 0)
-        cout << scanP_[i].first - cog.first << ", " << scanP_[i].second - cog.second << endl;
+      //if(p==3 && q == 0)
+      //  cout << scanP_[i].first - cog.first << ", " << scanP_[i].second - cog.second << endl;
       sum += ( pow(scanP_[i].first - cog.first,p) * pow(scanP_[i].second - cog.second,q) );
   }
-  cout << endl;
+  //cout << endl;
   return sum;
 }
 
@@ -405,6 +433,8 @@ pair<double,double> place_detector::area_perimeter_polygon(double& longestRangeI
 // **********************************************************************************
 void place_detector::update_feature_vec_a()
 {
+  ros::Time startTime = ros::Time::now();
+
   featureVecA_.resize(0);
 
   pair<double, double> meanSdev = mean_sdev_range_diff(DBL_MAX);
@@ -422,6 +452,9 @@ void place_detector::update_feature_vec_a()
     featureVecA_.push_back(meanSdev.first);
     featureVecA_.push_back(meanSdev.second);
   }
+
+  if(scanR_.size() < 1)
+    ros_warn("Scan size is zero");
 
   featureVecA_.push_back( accumulate(scanR_.begin(), scanR_.end(), 0.0) / scanR_.size() );
   double sqSum = inner_product(scanR_.begin(), scanR_.end(), scanR_.begin(), 0.0);
@@ -444,6 +477,8 @@ void place_detector::update_feature_vec_a()
     int nGaps = n_gaps(i);
     featureVecA_.push_back(nGaps);
   }
+
+  featureVecAComputeTime_ = ( ros::Time::now() - startTime ).toSec();
 }
 
 // **********************************************************************************
@@ -468,11 +503,32 @@ pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
   for(int i=0; i<scanR_.size()-1; i++)
     lenDiff.push_back( abs( min(scanR_[i+1], thresh) - min(scanR_[i], thresh) ) );
 
+  if(lenDiff.size() < 1)
+    ros_warn("LenDiff size is zero");
+
   double mean = accumulate(lenDiff.begin(), lenDiff.end(), 0.0) / lenDiff.size();
   double sqSum = inner_product(lenDiff.begin(), lenDiff.end(), lenDiff.begin(), 0.0);
   double sdev = sqrt(sqSum / lenDiff.size() - mean * mean);
 
   return make_pair(mean, sdev);
+}
+// **********************************************************************************
+void place_detector::write_feature_vecs_to_file()
+{
+	dataFile_ << mostRecentLabel_;
+
+	for(int i=0; i<featureVecA_.size(); i++)
+		dataFile_ << ", " << to_string(featureVecA_[i]); 
+
+  for(int i=0; i<featureVecB_.size(); i++)
+		dataFile_ << ", " << to_string(featureVecB_[i]); 
+		
+	dataFile_ << endl;
+
+  nFeatureVecsWritten_++;
+  ros_info( to_string(nFeatureVecsWritten_) + ": Written feature vector of size " + 
+  to_string(featureVecA_.size()) + " + " + to_string(featureVecB_.size()) + " = " + to_string(featureVecA_.size() + featureVecB_.size()) + 
+  " in " + to_string(featureVecAComputeTime_*1e3 + featureVecBComputeTime_*1e3) + " ms" );
 }
 
 // **********************************************************************************
@@ -497,14 +553,8 @@ void update_training_data()
 
 		trainingData_[labelIndx].push_back(scanMeas);
 	}
-}
-// **********************************************************************************
-void write_feature_set_to_file()
-{
-	dataFile_.open(folderPath+"data_file.csv");
-	dataFile_.close();
-}
-*/
+} */
+
 
 // **********************************************************************************
 template <typename T>

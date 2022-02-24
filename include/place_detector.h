@@ -31,12 +31,17 @@ private:
   vector<double> featureVecA_;
   vector<double> featureVecB_;
 
+  double featureVecAComputeTime_ = 0.0;
+  double featureVecBComputeTime_ = 0.0;
+
   string mostRecentLabel_ = "";
   double mostRecentLabelTime_ = 0.0;
 
   string filePath_ = ""; // file path to write feature set to
+  int nFeatureVecsWritten_ = 0;
 
   double pi_ = atan(1)*4;
+
 public:
   place_detector(ros::NodeHandle* nh);
   ~place_detector();
@@ -62,6 +67,7 @@ public:
   int n_gaps(const double& thresh);
   pair<double, double> mean_sdev_range_diff(const float& thresh);
   void test_function();
+  void write_feature_vecs_to_file();
   void ros_info(const string& s);
   void ros_warn(const string& s);
 
