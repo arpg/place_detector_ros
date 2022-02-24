@@ -41,6 +41,7 @@ void place_detector::load_params()
 // **********************************************************************************
 void place_detector::test_function()
 {
+  ros_warn("TEST FUNCTION CALLED, COMMENT IT OUT IF PROCESSING REALTIME DATA");
   scanR_.resize(0);
   scanR_.push_back(20.5);
   scanR_.push_back(20.0);
@@ -70,7 +71,7 @@ void place_detector::test_function()
 void place_detector::label_cb(const std_msgs::String& labelMsg)
 {
 	mostRecentLabel_ = labelMsg.data;
-	mostRecentLabelTime_ = ros::Time::now().toSec();
+	mostRecentLabelTime_ = ros::Time::now();
 }
 
 // **********************************************************************************
@@ -87,7 +88,7 @@ void place_detector::scan_cb_data_label_mode(const sensor_msgs::LaserScan& scanM
 	if(mostRecentLabel_ == "")
 		return;
 
-	if( ros::Time::now().toSec() - mostRecentLabelTime_ > 0.2 )
+	if( (ros::Time::now() - mostRecentLabelTime_).toSec() > 0.2 )
 	{
 		ros_warn("Most recent label is stale");
 		return;
@@ -102,14 +103,7 @@ void place_detector::scan_cb_data_label_mode(const sensor_msgs::LaserScan& scanM
 
   update_feature_vec_a();
   update_feature_vec_b();
-
-	for(int i=0; i<featureVecA_.size(); i++)
-		dataFile_ << ", " << to_string(featureVecA_[i]); 
-
-  for(int i=0; i<featureVecB_.size(); i++)
-		dataFile_ << ", " << to_string(featureVecB_[i]); 
-		
-	dataFile_ << endl;
+	write_feature_vecs_to_file();
 }
 
 // **********************************************************************************

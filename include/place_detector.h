@@ -35,7 +35,7 @@ private:
   double featureVecBComputeTime_ = 0.0;
 
   string mostRecentLabel_ = "";
-  double mostRecentLabelTime_ = 0.0;
+  ros::Time mostRecentLabelTime_;
 
   string filePath_ = ""; // file path to write feature set to
   int nFeatureVecsWritten_ = 0;
