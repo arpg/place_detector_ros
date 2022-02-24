@@ -56,6 +56,7 @@ public:
   double circumscribed_circle_area(const pair<double,double>& cog);
   pair<double, double> cog();
   vector<double> seven_invariants(const pair<double,double>& cog, vector<double>& secondOrderCentralMoments);
+  double p_q_th_order_central_moment(const int& p, const int& q, const pair<double,double>& cog);
   pair<double,double> area_perimeter_polygon(double& longestRangeIndx);
   void update_feature_vec_a();
   int n_gaps(const double& thresh);

@@ -41,13 +41,17 @@ void place_detector::test_function()
 {
   scanR_.resize(0);
   scanR_.push_back(20.5);
+  scanR_.push_back(20.0);
   scanR_.push_back(20.5);
-  scanR_.push_back(50.5);
+  scanR_.push_back(20.5);
+  scanR_.push_back(20.5);
+  scanR_.push_back(20.5);
+  scanR_.push_back(5.5);
   scanR_.push_back(20.5);
 
-  scanAngleMin_ = pi_/4;
-  scanAngleMax_ = pi_/4 + pi_/2 + pi_/2 + pi_/2;
-  scanAngleInc_ = pi_/2;
+  scanAngleMin_ = 0;
+  scanAngleMax_ = 0 + pi_/4*7;
+  scanAngleInc_ = pi_/4;
 
   update_feature_vec_b();
   cout << "done" << endl;
@@ -166,7 +170,9 @@ double place_detector::convex_perimeter(const vector<double>& convHullInds)
     sum += dist( scanP_[hullIndx], scanP_[hullIndxNxt] );
   }
 
-  sum += dist( scanP_.back(), scanP_[0] );
+  int hullIndx = convHullInds.back();
+  int hullIndxNxt = convHullInds[0];
+  sum += dist( scanP_[hullIndx], scanP_[hullIndxNxt] );
 
   return sum;
 }
@@ -202,13 +208,16 @@ vector<double> place_detector::convex_hull_indices(const int& longestRangeIndx)
   for(int i = 3; i<scanP_.size(); i++)
   {
     int indx = (longestRangeIndx+i) % scanP_.size();
-    int lastIndx = (longestRangeIndx+i-1) % scanP_.size();
-    int secondToLastIndx = (longestRangeIndx+i-2) % scanP_.size();
+    int lastIndx = convHullInds.back();
+    int secondToLastIndx = convHullInds[convHullInds.size()-2];
 
-    while (convHullInds.size()>1 && orientation( scanP_[secondToLastIndx] , scanP_[lastIndx], scanP_[indx]) != 2)
-         convHullInds.pop_back();
+    while (convHullInds.size()>1 && orientation( scanP_[convHullInds[convHullInds.size()-2]] , scanP_[convHullInds.back()], scanP_[indx]) != 2)
+      convHullInds.pop_back();
     convHullInds.push_back(indx);
   }
+
+  while (convHullInds.size()>1 && orientation( scanP_[convHullInds[convHullInds.size()-2]] , scanP_[convHullInds.back()], scanP_[longestRangeIndx]) != 2)
+    convHullInds.pop_back();
   
   return convHullInds;
 }
@@ -265,46 +274,21 @@ pair<double, double> place_detector::cog()
 }
 
 // **********************************************************************************
-vector<double> place_detector::seven_invariants(const pair<double,double>& cog, vector<double>& secondOrderCentralMoments)
+vector<double> place_detector::seven_invariants(const pair<double,double>& cogVal, vector<double>& secondOrderCentralMoments)
 {
-  const double mu_0_0 = scanP_.size() * scanP_.size();
+  const double mu_0_0 = p_q_th_order_central_moment(0,0, cogVal);//p_q_th_order_central_moment(0,0, cog);
 
-  double mu_2_0_y = 0, mu_0_2_y = 0;
-  double mu_1_1_y = 0;
-  double mu_1_2_y = 0, mu_2_1_y = 0;
-  double mu_0_3_y = 0, mu_3_0_y = 0; 
+  cout << "mu_0_0: " << mu_0_0 << endl;
 
-  for( int i=0; i<scanP_.size(); i++ )
-  {
-    int X = scanP_[i].first - cog.first;
-    int Y = scanP_[i].second - cog.second;
+  double mu_2_0 = p_q_th_order_central_moment(2,0, cogVal);
+  double mu_0_2 = p_q_th_order_central_moment(0,2, cogVal);
+  double mu_1_1 = p_q_th_order_central_moment(1,1, cogVal);
+  double mu_1_2 = p_q_th_order_central_moment(1,2, cogVal); 
+  double mu_2_1 = p_q_th_order_central_moment(2,1, cogVal);
+  double mu_0_3 = p_q_th_order_central_moment(0,3, cogVal);
+  double mu_3_0 = p_q_th_order_central_moment(3,0, cogVal);
 
-    mu_2_0_y += pow( Y, 0 ); mu_0_2_y += pow( Y, 2 );
-    mu_1_1_y += pow( Y, 1 );
-    mu_1_2_y += pow( Y, 2 ); mu_2_1_y += pow( Y, 1 );
-    mu_3_0_y += pow( Y, 0 ); mu_0_3_y += pow( Y, 3 );
-  }
-
-  double mu_2_0_x = 0, mu_0_2_x = 0;
-  double mu_1_1_x = 0;
-  double mu_1_2_x = 0, mu_2_1_x = 0;
-  double mu_0_3_x = 0, mu_3_0_x = 0; 
-
-  for( int i=0; i<scanP_.size(); i++ )
-  {
-    int X = scanP_[i].first - cog.first;
-    int Y = scanP_[i].second - cog.second;
-
-    mu_2_0_x += pow( X, 2 ); mu_0_2_x += pow( X, 0 );
-    mu_1_1_x += pow( X, 1 );
-    mu_1_2_x += pow( X, 1 ); mu_2_1_x += pow( X, 2 );
-    mu_3_0_x += pow( X, 3 ); mu_0_3_x += pow( X, 0 );
-  }
-
-  double mu_2_0 = mu_2_0_x*mu_2_0_y, mu_0_2 = mu_0_2_x*mu_0_2_y;
-  double mu_1_1 = mu_1_1_x*mu_1_1_y;
-  double mu_1_2 = mu_1_2_x*mu_1_2_y, mu_2_1 = mu_2_1_x*mu_2_1_y;
-  double mu_0_3 = mu_0_3_x*mu_0_3_y, mu_3_0 = mu_3_0_x*mu_3_0_y;
+  cout << "mu_3_0: " << mu_3_0 << endl;
 
   double lambda_2_0 = 2, lambda_0_2 = 2;
   double lambda_1_1 = 2;
@@ -319,27 +303,48 @@ vector<double> place_detector::seven_invariants(const pair<double,double>& cog, 
   double eta_0_3 = mu_0_3/pow(mu_0_0,lambda_0_3);
   double eta_3_0 = mu_3_0/pow(mu_0_0,lambda_3_0); 
 
+  cout << "eta_3_0: " << eta_3_0 << endl;
+
   vector<double> moments(7, 0);
 
   double tA = eta_2_0 + eta_0_2;
+  double tAA = eta_2_0 - eta_0_2;
   double tB = eta_3_0 - 3*eta_1_2;
   double tC = 3*eta_2_1 - eta_0_3;
   double tD = eta_3_0 + eta_1_2;
   double tE = eta_2_1 + eta_0_3;
+  double tF = eta_3_0 - 3*eta_2_1;
+  double tG = eta_3_0 + eta_1_2;
+  double tH = eta_3_0 + 3*eta_1_2;
 
   moments[0] = tA;
-  moments[1] = pow(tA,2) + 4*pow(eta_1_1,2);
+  moments[1] = pow(tAA,2) + 4*pow(eta_1_1,2);
   moments[2] = pow(tB,2) + pow(tC,2);
   moments[3] = pow(tD,2 ) + pow(tE,2);
-  moments[4] = tC*tE*( pow(tD,2)-pow(tE,2) ) + tB*tD*( pow(tD,2) - 3*pow(tE,2) );
-  moments[5] = tC*( pow(tD,2)-pow(tE,2) ) + 4*eta_1_1*tD*tE;
-  moments[6] = tC*tD*( pow(tD,2)-3*pow(tE,2) ) - tB*tE*( 3*pow(tD,2)-pow(tE,2) );
+  moments[4] = tF*tG*( pow(tG,2) - 3*pow(tE,2) ) + tC*tE*( 3*pow(tG,2) - pow(tE,2) );
+  moments[5] = tAA*( pow(tG,2)-pow(tE,2) ) + 4*eta_1_1*tG*tE;
+
+  moments[6] = tC*tG*( pow(tG,2)-3*pow(tE,2) ) - tH*tE*( 3*pow(tG,2)-pow(tE,2) );
 
   secondOrderCentralMoments[0] = mu_0_2;
   secondOrderCentralMoments[1] = mu_2_0;
   secondOrderCentralMoments[2] = mu_1_1;
 
   return moments;  
+}
+
+// **********************************************************************************
+double place_detector::p_q_th_order_central_moment(const int& p, const int& q, const pair<double,double>& cog)
+{
+  double sum = 0.0;
+  for( int i=0; i<scanP_.size(); i++ )
+  {
+      if(p==3 && q == 0)
+        cout << scanP_[i].first - cog.first << ", " << scanP_[i].second - cog.second << endl;
+      sum += ( pow(scanP_[i].first - cog.first,p) * pow(scanP_[i].second - cog.second,q) );
+  }
+  cout << endl;
+  return sum;
 }
 
 // **********************************************************************************
