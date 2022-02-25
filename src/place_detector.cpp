@@ -18,6 +18,7 @@ place_detector::place_detector(ros::NodeHandle* nh)
   labelSub_ = nh_->subscribe("label_in", 1, &place_detector::label_cb, this);
 
   labelPub_ = nh_->advertise<std_msgs::String>("label_out", 1);
+  convHullPub_ = nh_->advertise<visualization_msgs::Marker>("conv_hull_out", 1);
 
   return;
 }
@@ -97,6 +98,10 @@ void place_detector::label_cb(const std_msgs::String& labelMsg)
 // **********************************************************************************
 void place_detector::scan_cb(const sensor_msgs::LaserScan& scanMsg)
 {
+  if( scanMsg.ranges.size() < 5 )
+    ros_warn("Not enough points in the laser scan", 1);
+
+  scanFrameId_ = scanMsg.header.frame_id;
   if(mode_ == MODE::FEATURE_EXTRACTION)
     scan_cb_feature_extraction_mode(scanMsg);
   //else ...
@@ -157,12 +162,13 @@ void place_detector::update_feature_vec_b()
   //cout << "circumcircle area: " << circumCircleArea << endl; 
   featureVecB_.push_back( form_factor(area_perimeter.first, circumCircleArea) );
 
-  vector<double> convexHullInds = convex_hull_indices(longestRangeIndx);
+  vector<int> convexHullInds = convex_hull_indices(longestRangeIndx);
   //cout << "convex hull indices: " << convexHullInds << endl;
   double convexPerimeter = convex_perimeter(convexHullInds);
   //cout << "convex perimeter: " << convexPerimeter << endl;
   featureVecB_.push_back( roundness(area_perimeter.first, convexPerimeter) );
-
+  
+  publish_convex_hull(convexHullInds);
   featureVecBComputeTime_ = ( ros::Time::now() - startTime ).toSec();
 }
 
@@ -199,7 +205,7 @@ double place_detector::roundness(const double& area, const double& convexPerimet
 
 // **********************************************************************************
 // perimeter of the convex hull that encloses the object
-double place_detector::convex_perimeter(const vector<double>& convHullInds)
+double place_detector::convex_perimeter(const vector<int>& convHullInds)
 {
   double sum = 0;
   for(int i=0; i<convHullInds.size()-1; i++)
@@ -223,11 +229,11 @@ double place_detector::dist(const pair<double, double>& pt1, const pair<double, 
 }
 
 // **********************************************************************************
-vector<double> place_detector::convex_hull_indices(const int& longestRangeIndx)
+vector<int> place_detector::convex_hull_indices(const int& longestRangeIndx)
 {
-  vector<double> convHullInds;
+  vector<int> convHullInds;
   if(scanP_.size() == 0)
-    return vector<double>(0,0);
+    return vector<int>(0,0);
   if(scanP_.size() == 1)
   {
     convHullInds.push_back(longestRangeIndx);
@@ -529,6 +535,11 @@ pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
 // **********************************************************************************
 void place_detector::write_feature_vecs_to_file()
 {
+  //for(int i=0; i<scanR_.size()-1; i++)
+	//	dataFile_ << to_string(scanR_[i]) << ", ";
+
+  //dataFile_ << to_string(scanR_.back()) << endl;
+
 	dataFile_ << mostRecentLabel_;
 
 	for(int i=0; i<featureVecA_.size(); i++)
@@ -543,6 +554,41 @@ void place_detector::write_feature_vecs_to_file()
   ros_info( to_string(nFeatureVecsWritten_) + ": Written feature vector of size " + 
   to_string(featureVecA_.size()) + " + " + to_string(featureVecB_.size()) + " = " + to_string(featureVecA_.size() + featureVecB_.size()) + 
   " in " + to_string(featureVecAComputeTime_*1e3 + featureVecBComputeTime_*1e3) + " ms" );
+}
+// **********************************************************************************
+void place_detector::publish_convex_hull(const vector<int>& convHullInds)
+{
+  visualization_msgs::Marker marker;
+
+  marker.header.frame_id = scanFrameId_;
+  marker.header.stamp = ros::Time::now();
+
+  marker.ns = "conv_hull";
+  marker.id = 0;
+  marker.type = visualization_msgs::Marker::LINE_STRIP;
+  marker.action = visualization_msgs::Marker::MODIFY;
+  marker.pose.orientation.w = 1;
+  marker.scale.x = 1; marker.scale.y = 1; marker.scale.z;
+  marker.color.r = 1; marker.color.g = 1; marker.color.b = 1; marker.color.a = 1;
+
+  for(int i=0; i<convHullInds.size(); i++)
+  {
+    geometry_msgs::Point pt;
+    pt.x = scanP_[convHullInds[i]].first;
+    pt.y = scanP_[convHullInds[i]].second;
+    pt.z = 0;
+    marker.points.push_back(pt);
+    marker.colors.push_back(marker.color);
+  }
+
+  geometry_msgs::Point pt;
+  pt.x = scanP_[convHullInds[0]].first;
+  pt.y = scanP_[convHullInds[0]].second;
+  pt.z = 0;
+  marker.points.push_back(pt);
+  marker.colors.push_back(marker.color);
+
+  convHullPub_.publish(marker);
 }
 
 // **********************************************************************************

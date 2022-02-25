@@ -1,6 +1,9 @@
 #include "ros/ros.h"
 #include "sensor_msgs/LaserScan.h"
 #include "std_msgs/String.h"
+#include "visualization_msgs/Marker.h"
+#include "geometry_msgs/Point.h"
+#include "std_msgs/ColorRGBA.h"
 
 #include <fstream>
 #include <numeric>
@@ -17,6 +20,7 @@ private:
   ros::Subscriber scanSub_;
   ros::Subscriber labelSub_;
   ros::Publisher labelPub_;
+  ros::Publisher convHullPub_;
 
   MODE mode_;
 
@@ -39,7 +43,10 @@ private:
   string mostRecentLabel_ = "";
   ros::Time mostRecentLabelTime_;
 
+  string scanFrameId_ = "";
+
   string filePath_ = ""; // file path to write feature set to
+
   int nFeatureVecsWritten_ = 0;
 
   double pi_ = atan(1)*4;
@@ -56,9 +63,9 @@ public:
   double compactness(const double& area, const double& perimeter);
   double eccentricity(const double& area, const vector<double>& secondOrderCentralMoments);
   double roundness(const double& area, const double& convexPerimeter);
-  double convex_perimeter(const vector<double>& convHullInds);
+  double convex_perimeter(const vector<int>& convHullInds);
   double dist(const pair<double, double>& pt1, const pair<double, double>& pt2);
-  vector<double> convex_hull_indices(const int& longestRangeIndx);
+  vector<int> convex_hull_indices(const int& longestRangeIndx);
   int orientation(const pair<double,double>& p, const pair<double,double>& q, const pair<double,double>& r);
   double form_factor(const double& area, const double& circumCircleArea);
   double circumscribed_circle_area(const pair<double,double>& cog);
@@ -73,6 +80,7 @@ public:
   void write_feature_vecs_to_file();
   void ros_info(const string& s, double throttle = -1);
   void ros_warn(const string& s, double throttle = -1);
+  void publish_convex_hull(const vector<int>& convHullInds);
 
 };
 
