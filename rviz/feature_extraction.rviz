@@ -6,8 +6,11 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /LaserScan1
+        - /Convex Hull1
+        - /Convex Hull1/Namespaces1
       Splitter Ratio: 0.5
-    Tree Height: 363
+    Tree Height: 728
   - Class: rviz/Selection
     Name: Selection
   - Class: rviz/Tool Properties
@@ -26,7 +29,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PointCloud2
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -108,12 +111,13 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
-    - Class: rviz/Marker
+    - Class: rviz/MarkerArray
       Enabled: true
       Marker Topic: /place_detector/conv_hull_out
       Name: Convex Hull
       Namespaces:
-        {}
+        conv_hull: true
+        scan: false
       Queue Size: 100
       Value: true
   Enabled: true
@@ -144,25 +148,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 16.15452766418457
+      Distance: 31.004228591918945
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.7128841876983643
-        Y: 0.9735859632492065
-        Z: -0.2643425464630127
+        X: 2.4378373622894287
+        Y: -0.7270459532737732
+        Z: -15.834083557128906
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1353973150253296
+      Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 1.4453973770141602
+      Yaw: 3.0253982543945312
     Saved: ~
 Window Geometry:
   Displays:

@@ -18,7 +18,7 @@ place_detector::place_detector(ros::NodeHandle* nh)
   labelSub_ = nh_->subscribe("label_in", 1, &place_detector::label_cb, this);
 
   labelPub_ = nh_->advertise<std_msgs::String>("label_out", 1);
-  convHullPub_ = nh_->advertise<visualization_msgs::Marker>("conv_hull_out", 1);
+  convHullPub_ = nh_->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
 
   return;
 }
@@ -124,11 +124,69 @@ void place_detector::scan_cb_feature_extraction_mode(const sensor_msgs::LaserSca
   scanAngleInc_ = scanMsg.angle_increment;
   scanR_ = scanMsg.ranges;
 
+  if(!fill_gaps_in_scan())
+  {
+    ros_warn("Invalid laser scan");
+		return;
+  }
+
   update_feature_vec_a();
   update_feature_vec_b();
 	write_feature_vecs_to_file();
 
   mostRecentLabel_ = "";
+}
+
+// **********************************************************************************
+bool place_detector::fill_gaps_in_scan()
+{
+  if(scanR_.size() < 2)
+    return false;
+
+  int validIndx = 0;
+  while( validIndx < scanR_.size() && !isnormal(scanR_[validIndx]) ) validIndx++;
+
+  if(validIndx >= scanR_.size())
+    return false;
+
+  // interpolate midInds using end point indices indx1 and indx2 
+  int indx1 = 0;
+  int indx2 = 0;
+  vector<int> midInds; 
+
+  // start from the first normal indx and come back to it
+  for(int i=0; i<scanR_.size()+1; i++)
+  {
+    int indx = ( validIndx+i ) % scanR_.size();
+
+    if( isnormal(scanR_[indx]) && midInds.size() >= 1 )
+    {
+      indx2 = indx;
+      interp_scan(indx1, indx2, midInds);
+      midInds.resize(0);
+    }
+
+    if( !isnormal(scanR_[indx]) )
+      midInds.push_back(indx);
+    else
+      indx1 = indx;
+  }
+
+  return true;
+}
+// **********************************************************************************
+void place_detector::interp_scan(const int& indx1, const int& indx2, const vector<int>& midInds)
+{
+  const double delTheta = 1/double(midInds.size()+1);
+
+  for(int i=0; i<midInds.size(); i++)
+  {
+    int indx = midInds[i];
+    double val1 = scanR_[indx1];
+    double val2 = scanR_[indx2];
+    double theta = (i+1)*delTheta;
+    scanR_[ indx ] = val1 + theta*(val2-val1);
+  }
 }
 
 // **********************************************************************************
@@ -138,8 +196,8 @@ void place_detector::update_feature_vec_b()
 
   featureVecB_.resize(0);
 
-  double longestRangeIndx;
-  pair<double,double> area_perimeter = area_perimeter_polygon(longestRangeIndx); // updates scanP_ to be used by later functions
+  int bottomPtIndx;
+  pair<double,double> area_perimeter = area_perimeter_polygon(bottomPtIndx); // updates scanP_ and bottomPtIndx_ to be used by later functions
   featureVecB_.push_back(area_perimeter.first);
   featureVecB_.push_back(area_perimeter.second);
 
@@ -159,13 +217,13 @@ void place_detector::update_feature_vec_b()
   featureVecB_.push_back( eccentricity(area_perimeter.first, secondOrderCentralMoments) );
 
   double circumCircleArea = circumscribed_circle_area(cogVal);
-  //cout << "circumcircle area: " << circumCircleArea << endl; 
+  cout << "circumcircle area: " << circumCircleArea << endl; 
   featureVecB_.push_back( form_factor(area_perimeter.first, circumCircleArea) );
 
-  vector<int> convexHullInds = convex_hull_indices(longestRangeIndx);
-  //cout << "convex hull indices: " << convexHullInds << endl;
+  vector<int> convexHullInds = convex_hull_indices(bottomPtIndx); // requires bottomPtIndx_ to be set first
+  cout << "convex hull indices: " << convexHullInds << endl;
   double convexPerimeter = convex_perimeter(convexHullInds);
-  //cout << "convex perimeter: " << convexPerimeter << endl;
+  cout << "convex perimeter: " << convexPerimeter << endl;
   featureVecB_.push_back( roundness(area_perimeter.first, convexPerimeter) );
   
   publish_convex_hull(convexHullInds);
@@ -204,6 +262,14 @@ double place_detector::roundness(const double& area, const double& convexPerimet
 }
 
 // **********************************************************************************
+void place_detector::swap(pair<double,double>& p1, pair<double,double>& p2)
+{
+  pair<double,double> temp = p1;
+  p1 = p2;
+  p2 = temp;
+}
+ 
+// **********************************************************************************
 // perimeter of the convex hull that encloses the object
 double place_detector::convex_perimeter(const vector<int>& convHullInds)
 {
@@ -229,39 +295,43 @@ double place_detector::dist(const pair<double, double>& pt1, const pair<double, 
 }
 
 // **********************************************************************************
-vector<int> place_detector::convex_hull_indices(const int& longestRangeIndx)
+vector<int> place_detector::convex_hull_indices(const int& bottomPtIndx)
 {
   vector<int> convHullInds;
   if(scanP_.size() == 0)
     return vector<int>(0,0);
   if(scanP_.size() == 1)
   {
-    convHullInds.push_back(longestRangeIndx);
+    convHullInds.push_back(bottomPtIndx);
     return convHullInds;
   }
   if(scanP_.size() == 2)
   {
-    convHullInds.push_back(longestRangeIndx);
-    convHullInds.push_back( (longestRangeIndx+1) % scanP_.size() );
+    convHullInds.push_back(bottomPtIndx);
+    convHullInds.push_back( (bottomPtIndx+1) % scanP_.size() );
     return convHullInds;
   }
+  ros_warn("here");
+  vector<pair<double,double>> scanPSorted = scanP_;
+  swap(scanPSorted[0], scanPSorted[bottomPtIndx]);
+  sort(scanPSorted.begin()+1, scanPSorted.end(), compare(scanPSorted[0]));
+  ros_warn("here1");
+  convHullInds.push_back( bottomPtIndx );
+  convHullInds.push_back( (bottomPtIndx+1) % scanPSorted.size() );
+  convHullInds.push_back( (bottomPtIndx+2) % scanPSorted.size() );
 
-  convHullInds.push_back( longestRangeIndx );
-  convHullInds.push_back( (longestRangeIndx+1) % scanP_.size() );
-  convHullInds.push_back( (longestRangeIndx+2) % scanP_.size() );
-
-  for(int i = 3; i<scanP_.size(); i++)
+  for(int i = 3; i<scanPSorted.size(); i++)
   {
-    int indx = (longestRangeIndx+i) % scanP_.size();
+    int indx = (bottomPtIndx+i) % scanPSorted.size();
     int lastIndx = convHullInds.back();
     int secondToLastIndx = convHullInds[convHullInds.size()-2];
 
-    while (convHullInds.size()>1 && orientation( scanP_[convHullInds[convHullInds.size()-2]] , scanP_[convHullInds.back()], scanP_[indx]) != 2)
+    while (convHullInds.size()>1 && orientation( scanPSorted[convHullInds[convHullInds.size()-2]] , scanPSorted[convHullInds.back()], scanPSorted[indx]) != 2)
       convHullInds.pop_back();
     convHullInds.push_back(indx);
   }
 
-  while (convHullInds.size()>1 && orientation( scanP_[convHullInds[convHullInds.size()-2]] , scanP_[convHullInds.back()], scanP_[longestRangeIndx]) != 2)
+  while (convHullInds.size()>1 && orientation( scanPSorted[convHullInds[convHullInds.size()-2]] , scanPSorted[convHullInds.back()], scanPSorted[bottomPtIndx]) != 2)
     convHullInds.pop_back();
   
   return convHullInds;
@@ -396,7 +466,7 @@ double place_detector::p_q_th_order_central_moment(const int& p, const int& q, c
 }
 
 // **********************************************************************************
-pair<double,double> place_detector::area_perimeter_polygon(double& longestRangeIndx)
+pair<double,double> place_detector::area_perimeter_polygon(int& bottomPtIndx)
 {
   pair<double,double> result;
   scanP_.resize(0);
@@ -410,7 +480,7 @@ pair<double,double> place_detector::area_perimeter_polygon(double& longestRangeI
   yCoordNxt = scanR_[0]*sin(thetaNxt);
 
   scanP_.push_back( make_pair(xCoordNxt, yCoordNxt) );
-  longestRangeIndx = scanR_.size() - 1;
+  bottomPtIndx = 0;
 
   for(int i=0; i<scanR_.size()-1; i++)
   {
@@ -428,8 +498,10 @@ pair<double,double> place_detector::area_perimeter_polygon(double& longestRangeI
     sumB += ( yCoord * xCoordNxt );
     perimeter +=  dist( make_pair(xCoord, yCoord), make_pair(xCoordNxt, yCoordNxt) );
 
-    if( scanR_[longestRangeIndx] < scanR_[i])
-      longestRangeIndx = i;
+    if( yCoordNxt < scanP_[bottomPtIndx].second )
+      bottomPtIndx = i+1;
+    else if( yCoordNxt == scanP_[bottomPtIndx].second && xCoordNxt < scanP_[bottomPtIndx].first )
+      bottomPtIndx = i+1;
   }
 
   theta = thetaNxt;
@@ -535,10 +607,11 @@ pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
 // **********************************************************************************
 void place_detector::write_feature_vecs_to_file()
 {
-  //for(int i=0; i<scanR_.size()-1; i++)
-	//	dataFile_ << to_string(scanR_[i]) << ", ";
+  dataFile_ << "scan_ranges, ";
+  for(int i=0; i<scanR_.size()-1; i++)
+		dataFile_ << to_string(scanR_[i]) << ", ";
 
-  //dataFile_ << to_string(scanR_.back()) << endl;
+  dataFile_ << to_string(scanR_.back()) << endl;
 
 	dataFile_ << mostRecentLabel_;
 
@@ -558,6 +631,9 @@ void place_detector::write_feature_vecs_to_file()
 // **********************************************************************************
 void place_detector::publish_convex_hull(const vector<int>& convHullInds)
 {
+  visualization_msgs::MarkerArray markerArr;
+
+  // *********************************
   visualization_msgs::Marker marker;
 
   marker.header.frame_id = scanFrameId_;
@@ -568,7 +644,7 @@ void place_detector::publish_convex_hull(const vector<int>& convHullInds)
   marker.type = visualization_msgs::Marker::LINE_STRIP;
   marker.action = visualization_msgs::Marker::MODIFY;
   marker.pose.orientation.w = 1;
-  marker.scale.x = 1; marker.scale.y = 1; marker.scale.z;
+  marker.scale.x = 0.25; marker.scale.y = 0.25; marker.scale.z = 0.25;
   marker.color.r = 1; marker.color.g = 1; marker.color.b = 1; marker.color.a = 1;
 
   for(int i=0; i<convHullInds.size(); i++)
@@ -588,7 +664,32 @@ void place_detector::publish_convex_hull(const vector<int>& convHullInds)
   marker.points.push_back(pt);
   marker.colors.push_back(marker.color);
 
-  convHullPub_.publish(marker);
+  markerArr.markers.push_back(marker);
+
+  // *********************************
+  marker.ns = "scan";
+  marker.points.resize(0);
+  marker.colors.resize(0);
+
+  for(int i=0; i<scanP_.size(); i++)
+  {
+    pt.x = scanP_[i].first;
+    pt.y = scanP_[i].second;
+    pt.z = 0;
+    marker.points.push_back(pt);
+    marker.colors.push_back(marker.color);
+  }
+
+  pt.x = scanP_[0].first;
+  pt.y = scanP_[0].second;
+  pt.z = 0;
+  marker.points.push_back(pt);
+  marker.colors.push_back(marker.color);
+
+  markerArr.markers.push_back(marker);
+
+  // *********************************
+  convHullPub_.publish(markerArr);
 }
 
 // **********************************************************************************

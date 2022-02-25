@@ -20,7 +20,7 @@
   <param name="angle_max" value = "3.14159"/>
   <param name="range_min" value = "0.45"/>
   <param name="range_max" value = "100"/>
-  <param name="use_inf" value = "false"/>
+  <param name="use_inf" value = "true"/>
 </node>
 
 <node pkg="rviz" type="rviz" name="place_detector_ui" output="screen" args="-d $(arg rviz_config)"/>
