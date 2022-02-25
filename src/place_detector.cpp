@@ -6,38 +6,58 @@ place_detector::place_detector(ros::NodeHandle* nh)
   nh_ = nh;
   load_params();
 
-  if(dataLabelMode_)
-    dataFile_.open(filePath_);
+  if(mode_ == MODE::TEST)
+  {
+    test_function();
+    return;
+  }
+
+  dataFile_.open(filePath_);
 
   scanSub_ = nh_->subscribe("scan_in", 1, &place_detector::scan_cb, this);
   labelSub_ = nh_->subscribe("label_in", 1, &place_detector::label_cb, this);
 
   labelPub_ = nh_->advertise<std_msgs::String>("label_out", 1);
 
-  test_function();
   return;
 }
 
 // **********************************************************************************
 place_detector::~place_detector()
 {
-  if(dataLabelMode_)
-    dataFile_.close();
+  dataFile_.close();
 }
 // **********************************************************************************
 void place_detector::load_params()
 {
   ros_info("Waiting for params to load ...");
 
-  while(!nh_->getParam("data_label_mode", dataLabelMode_));
+  while( !is_valid(mode_) )
+  {
+    string mode = "";
+    nh_->getParam("mode", mode);
 
-  if(dataLabelMode_)
-    while(!nh_->getParam("file_path", filePath_));
-  else
-    nh_->getParam("file_path", filePath_);
+    if( mode == "feature_extraction" )
+      mode_ = MODE::FEATURE_EXTRACTION;
+    else if( mode == "svm_training" )
+      mode_ = MODE::SVM_TRAINING;
+    else if( mode == "realtime_prediction" )
+      mode_ = MODE::REALTIME_PREDICTION;
+    else if( mode == "test" )
+      mode_ = MODE::TEST;
+  }
+
+  while(!nh_->getParam("file_path", filePath_));
 
   ros_info("Params loaded");
 }
+
+// **********************************************************************************
+bool place_detector::is_valid(const MODE& mode)
+{
+  return (mode_ == MODE::FEATURE_EXTRACTION || mode_ == MODE::SVM_TRAINING || mode_ == MODE::REALTIME_PREDICTION || mode_ == MODE::TEST);
+}
+
 // **********************************************************************************
 void place_detector::test_function()
 {
@@ -77,20 +97,20 @@ void place_detector::label_cb(const std_msgs::String& labelMsg)
 // **********************************************************************************
 void place_detector::scan_cb(const sensor_msgs::LaserScan& scanMsg)
 {
-  if(dataLabelMode_)
-    scan_cb_data_label_mode(scanMsg);
+  if(mode_ == MODE::FEATURE_EXTRACTION)
+    scan_cb_feature_extraction_mode(scanMsg);
   //else ...
 }
 
 // **********************************************************************************
-void place_detector::scan_cb_data_label_mode(const sensor_msgs::LaserScan& scanMsg)
+void place_detector::scan_cb_feature_extraction_mode(const sensor_msgs::LaserScan& scanMsg)
 {
 	if(mostRecentLabel_ == "")
 		return;
 
-	if( (ros::Time::now() - mostRecentLabelTime_).toSec() > 0.2 )
+	if( (ros::Time::now() - mostRecentLabelTime_).toSec() > 0.1 )
 	{
-		ros_warn("Most recent label is stale");
+		ros_warn("Most recent label is stale", 5);
 		return;
 	}
 
@@ -99,11 +119,11 @@ void place_detector::scan_cb_data_label_mode(const sensor_msgs::LaserScan& scanM
   scanAngleInc_ = scanMsg.angle_increment;
   scanR_ = scanMsg.ranges;
 
-	dataFile_ << mostRecentLabel_;
-
   update_feature_vec_a();
   update_feature_vec_b();
 	write_feature_vecs_to_file();
+
+  mostRecentLabel_ = "";
 }
 
 // **********************************************************************************
@@ -587,15 +607,21 @@ ostream& operator<<(ostream& os, const pair<T1,T2>& pairIn)
 }
 
 // **********************************************************************************
-void place_detector::ros_info(const string& s)
+void place_detector::ros_info(const string& s, double throttle_s)
 {
-	ROS_INFO("%s: %s", nh_->getNamespace().c_str(), s.c_str());	
+  if(throttle_s < 0.0)
+	  ROS_INFO("%s: %s", nh_->getNamespace().c_str(), s.c_str());	
+  else
+    ROS_INFO_THROTTLE(throttle_s, "%s: %s", nh_->getNamespace().c_str(), s.c_str());	
 }
 
 // **********************************************************************************
-void place_detector::ros_warn(const string& s)
+void place_detector::ros_warn(const string& s, double throttle_s)
 {
-	ROS_WARN("%s: %s", nh_->getNamespace().c_str(), s.c_str());		
+  if(throttle_s < 0.0)
+	  ROS_WARN("%s: %s", nh_->getNamespace().c_str(), s.c_str());		
+  else
+    ROS_WARN_THROTTLE(throttle_s, "%s: %s", nh_->getNamespace().c_str(), s.c_str());
 }
 
 // **********************************************************************************

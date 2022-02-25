@@ -10,13 +10,15 @@ using namespace std;
 class place_detector
 {
 private:
+  enum MODE {FEATURE_EXTRACTION, REALTIME_PREDICTION, SVM_TRAINING, TEST};
+
   ros::NodeHandle* nh_;
 
   ros::Subscriber scanSub_;
   ros::Subscriber labelSub_;
   ros::Publisher labelPub_;
 
-  bool dataLabelMode_ = false;
+  MODE mode_;
 
   ofstream dataFile_;
   //map<string, int> labelToIndx_;
@@ -46,9 +48,10 @@ public:
   place_detector(ros::NodeHandle* nh);
   ~place_detector();
   void load_params();
+  bool is_valid(const MODE& mode);
   void label_cb(const std_msgs::String& labelMsg);
   void scan_cb(const sensor_msgs::LaserScan& scanMsg);
-  void scan_cb_data_label_mode(const sensor_msgs::LaserScan& scanMsg);
+  void scan_cb_feature_extraction_mode(const sensor_msgs::LaserScan& scanMsg);
   void update_feature_vec_b();
   double compactness(const double& area, const double& perimeter);
   double eccentricity(const double& area, const vector<double>& secondOrderCentralMoments);
@@ -68,8 +71,8 @@ public:
   pair<double, double> mean_sdev_range_diff(const float& thresh);
   void test_function();
   void write_feature_vecs_to_file();
-  void ros_info(const string& s);
-  void ros_warn(const string& s);
+  void ros_info(const string& s, double throttle = -1);
+  void ros_warn(const string& s, double throttle = -1);
 
 };
 
