@@ -3,7 +3,7 @@
 <arg name = "mode" default = "feature_extraction"/>
 <arg name = "file_path" default = "$(find place_detector)/data/dataset.txt"/>
 <arg name = "rviz_config" default = "$(find place_detector)/rviz/feature_extraction.rviz"/>
-<arg name = "bag_file_path" default = "/home/shakeeb/Downloads/D02_ouster_imu_2021-09-27-12-34-02_1.bag"/>
+<arg name = "bag_file_path" default = "/home/shakeeb/Downloads/D02_ouster_imu_2021-09-27-12-06-12_0.bag"/>
 
 <param name = "use_sim_time" value = "true"/>
 

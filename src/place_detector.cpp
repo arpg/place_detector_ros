@@ -217,16 +217,17 @@ void place_detector::update_feature_vec_b()
   featureVecB_.push_back( eccentricity(area_perimeter.first, secondOrderCentralMoments) );
 
   double circumCircleArea = circumscribed_circle_area(cogVal);
-  cout << "circumcircle area: " << circumCircleArea << endl; 
+  //cout << "circumcircle area: " << circumCircleArea << endl; 
   featureVecB_.push_back( form_factor(area_perimeter.first, circumCircleArea) );
 
-  vector<int> convexHullInds = convex_hull_indices(bottomPtIndx); // requires bottomPtIndx_ to be set first
-  cout << "convex hull indices: " << convexHullInds << endl;
-  double convexPerimeter = convex_perimeter(convexHullInds);
-  cout << "convex perimeter: " << convexPerimeter << endl;
+  //cout << "Bottom Point Indx: " << bottomPtIndx << endl;
+  vector<pair<double,double>> convHullPts = convex_hull_points(bottomPtIndx); // requires bottomPtIndx to be set first
+  //cout << "convex hull points: " << convHullPts << endl;
+  double convexPerimeter = convex_perimeter(convHullPts);
+  //cout << "convex perimeter: " << convexPerimeter << endl;
   featureVecB_.push_back( roundness(area_perimeter.first, convexPerimeter) );
   
-  publish_convex_hull(convexHullInds);
+  publish_convex_hull(convHullPts, bottomPtIndx);
   featureVecBComputeTime_ = ( ros::Time::now() - startTime ).toSec();
 }
 
@@ -271,19 +272,13 @@ void place_detector::swap(pair<double,double>& p1, pair<double,double>& p2)
  
 // **********************************************************************************
 // perimeter of the convex hull that encloses the object
-double place_detector::convex_perimeter(const vector<int>& convHullInds)
+double place_detector::convex_perimeter(const vector<pair<double,double>>& convHullPts)
 {
   double sum = 0;
-  for(int i=0; i<convHullInds.size()-1; i++)
-  {
-    int hullIndx = convHullInds[i];
-    int hullIndxNxt = convHullInds[i+1];
-    sum += dist( scanP_[hullIndx], scanP_[hullIndxNxt] );
-  }
+  for(int i=0; i<convHullPts.size()-1; i++)
+    sum += dist( convHullPts[i], convHullPts[i+1] );
 
-  int hullIndx = convHullInds.back();
-  int hullIndxNxt = convHullInds[0];
-  sum += dist( scanP_[hullIndx], scanP_[hullIndxNxt] );
+  sum += dist( convHullPts.back(), convHullPts[0] );
 
   return sum;
 }
@@ -295,56 +290,57 @@ double place_detector::dist(const pair<double, double>& pt1, const pair<double, 
 }
 
 // **********************************************************************************
-vector<int> place_detector::convex_hull_indices(const int& bottomPtIndx)
-{
-  vector<int> convHullInds;
-  if(scanP_.size() == 0)
-    return vector<int>(0,0);
-  if(scanP_.size() == 1)
-  {
-    convHullInds.push_back(bottomPtIndx);
-    return convHullInds;
-  }
-  if(scanP_.size() == 2)
-  {
-    convHullInds.push_back(bottomPtIndx);
-    convHullInds.push_back( (bottomPtIndx+1) % scanP_.size() );
-    return convHullInds;
-  }
-  ros_warn("here");
-  vector<pair<double,double>> scanPSorted = scanP_;
-  swap(scanPSorted[0], scanPSorted[bottomPtIndx]);
-  sort(scanPSorted.begin()+1, scanPSorted.end(), compare(scanPSorted[0]));
-  ros_warn("here1");
-  convHullInds.push_back( bottomPtIndx );
-  convHullInds.push_back( (bottomPtIndx+1) % scanPSorted.size() );
-  convHullInds.push_back( (bottomPtIndx+2) % scanPSorted.size() );
-
-  for(int i = 3; i<scanPSorted.size(); i++)
-  {
-    int indx = (bottomPtIndx+i) % scanPSorted.size();
-    int lastIndx = convHullInds.back();
-    int secondToLastIndx = convHullInds[convHullInds.size()-2];
-
-    while (convHullInds.size()>1 && orientation( scanPSorted[convHullInds[convHullInds.size()-2]] , scanPSorted[convHullInds.back()], scanPSorted[indx]) != 2)
-      convHullInds.pop_back();
-    convHullInds.push_back(indx);
-  }
-
-  while (convHullInds.size()>1 && orientation( scanPSorted[convHullInds[convHullInds.size()-2]] , scanPSorted[convHullInds.back()], scanPSorted[bottomPtIndx]) != 2)
-    convHullInds.pop_back();
-  
-  return convHullInds;
-}
-
-// **********************************************************************************
 // https://www.geeksforgeeks.org/convex-hull-set-2-graham-scan/
-int place_detector::orientation(const pair<double,double>& p, const pair<double,double>& q, const pair<double,double>& r)
+vector<pair<double,double>> place_detector::convex_hull_points(int bottomPtIndx)
 {
-  int val = (q.second - p.second) * (r.first - q.first) - (q.first - p.first) * (r.second - q.second);
+  if(scanP_.size() < 3)
+    return scanP_;
+
+  vector<pair<double,double>> scanPSorted(scanP_);
+/*
+  scanPSorted.resize(0);
+  scanPSorted.push_back( make_pair(0,3) );
+  scanPSorted.push_back( make_pair(1,1) );
+  scanPSorted.push_back( make_pair(2,2) );
+  scanPSorted.push_back( make_pair(4,4) );
+  scanPSorted.push_back( make_pair(0,0) );
+  scanPSorted.push_back( make_pair(1,2) );
+  scanPSorted.push_back( make_pair(3,1) );
+  scanPSorted.push_back( make_pair(3,3) );
+
+  bottomPtIndx = 4;
+*/
+  
+  swap(scanPSorted[0], scanPSorted[bottomPtIndx]);
+  compare comp(scanPSorted[0]);
+  sort(scanPSorted.begin()+1, scanPSorted.end(), comp);
+
+  int newSz = 1;
+  for (int i=1; i<scanPSorted.size(); i++)
+  {
+    while (i < scanPSorted.size()-1 && comp.orientation(scanPSorted[0], scanPSorted[i], scanPSorted[i+1]) == 0)
+      i++;
  
-  if (val == 0) return 0;  // collinear
-    return (val > 0)? 1: 2; // clock or counterclock wise
+    scanPSorted[newSz] = scanPSorted[i];
+    newSz++;  // Update size of modified array
+  }
+
+  if(newSz < 3)
+    return scanP_;
+
+  vector<pair<double,double>> convHullPts;
+  convHullPts.push_back( scanPSorted[0] );
+  convHullPts.push_back( scanPSorted[1] );
+  convHullPts.push_back( scanPSorted[2] );
+
+  for (int i = 3; i < newSz; i++)
+  {
+    while (convHullPts.size()>1 && comp.orientation(convHullPts[convHullPts.size() - 2], convHullPts[convHullPts.size()-1], scanPSorted[i]) != 2)
+      convHullPts.pop_back();
+    convHullPts.push_back( scanPSorted[i] );
+  }
+  
+  return convHullPts;
 }
 
 // **********************************************************************************
@@ -629,7 +625,7 @@ void place_detector::write_feature_vecs_to_file()
   " in " + to_string(featureVecAComputeTime_*1e3 + featureVecBComputeTime_*1e3) + " ms" );
 }
 // **********************************************************************************
-void place_detector::publish_convex_hull(const vector<int>& convHullInds)
+void place_detector::publish_convex_hull(const vector<pair<double,double>>& convHullPts, const int& bottomPtIndx)
 {
   visualization_msgs::MarkerArray markerArr;
 
@@ -647,19 +643,19 @@ void place_detector::publish_convex_hull(const vector<int>& convHullInds)
   marker.scale.x = 0.25; marker.scale.y = 0.25; marker.scale.z = 0.25;
   marker.color.r = 1; marker.color.g = 1; marker.color.b = 1; marker.color.a = 1;
 
-  for(int i=0; i<convHullInds.size(); i++)
+  for(int i=0; i<convHullPts.size(); i++)
   {
     geometry_msgs::Point pt;
-    pt.x = scanP_[convHullInds[i]].first;
-    pt.y = scanP_[convHullInds[i]].second;
+    pt.x = convHullPts[i].first;
+    pt.y = convHullPts[i].second;
     pt.z = 0;
     marker.points.push_back(pt);
     marker.colors.push_back(marker.color);
   }
 
   geometry_msgs::Point pt;
-  pt.x = scanP_[convHullInds[0]].first;
-  pt.y = scanP_[convHullInds[0]].second;
+  pt.x = convHullPts[0].first;
+  pt.y = convHullPts[0].second;
   pt.z = 0;
   marker.points.push_back(pt);
   marker.colors.push_back(marker.color);
@@ -689,6 +685,18 @@ void place_detector::publish_convex_hull(const vector<int>& convHullInds)
   markerArr.markers.push_back(marker);
 
   // *********************************
+  marker.ns = "bottom_point";
+  marker.id = 0;
+  marker.type = visualization_msgs::Marker::SPHERE;
+  marker.action = visualization_msgs::Marker::MODIFY;
+  marker.pose.position.x = scanP_[bottomPtIndx].first;
+  marker.pose.position.y = scanP_[bottomPtIndx].second;
+  marker.pose.position.z = 0;
+  marker.pose.orientation.w = 1;
+  marker.scale.x = 0.75; marker.scale.y = 0.75; marker.scale.z = 0.75;
+  marker.color.r = 1; marker.color.g = 1; marker.color.b = 1; marker.color.a = 1;
+
+  markerArr.markers.push_back(marker);
   convHullPub_.publish(markerArr);
 }
 

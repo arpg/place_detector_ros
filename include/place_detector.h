@@ -9,29 +9,34 @@
 #include <fstream>
 #include <numeric>
 #include <cmath>
+#include <algorithm>
+#include <vector>
 
 using namespace std;
 
-struct compare
+class compare
 {
+private:
   pair<double,double> p0;
-
+public:
   compare(const pair<double,double>& p0Val) 
   { 
     p0 = p0Val; 
   }
 
-  int operator()(const pair<double,double>& p1, const pair<double,double>& p2)
+  bool operator()(const pair<double,double>& p1, const pair<double,double>& p2)
   {
-  // Find orientation
     int o = orientation(p0, p1, p2);
     if (o == 0)
-      return (dist_sq(p0, p2) >= dist_sq(p0, p1))? -1 : 1;
+      return (dist_sq(p0, p2) >= dist_sq(p0, p1))? true : false;
   
-    return (o == 2)? -1: 1;
+    return (o == 2)? true: false;
+
+    cout << "SOMETHINGS WRONG!!!!!!!!!!!!!!!!!!!!" << endl;
+    return false;
   }
 
-  int dist_sq(const pair<double,double>& p1, const pair<double,double>& p2)
+  double dist_sq(const pair<double,double>& p1, const pair<double,double>& p2)
   {
     return (p1.first - p2.first)*(p1.first - p2.first) + 
             (p1.second - p2.second)*(p1.second - p2.second);
@@ -39,10 +44,11 @@ struct compare
 
   int orientation(const pair<double,double>& p, const pair<double,double>& q, const pair<double,double>& r)
   {
-    int val = (q.second - p.second) * (r.first - q.first) - (q.first - p.first) * (r.second - q.second);
+    double val = (q.second - p.second) * (r.first - q.first) - 
+              (q.first - p.first) * (r.second - q.second);
   
     if (val == 0) return 0;  // collinear
-      return (val > 0)? 1: 2; // clock or counterclock wise
+    return (val > 0)? 1: 2; // clock or counterclock wise
   }
 };
 
@@ -99,10 +105,9 @@ public:
   double compactness(const double& area, const double& perimeter);
   double eccentricity(const double& area, const vector<double>& secondOrderCentralMoments);
   double roundness(const double& area, const double& convexPerimeter);
-  double convex_perimeter(const vector<int>& convHullInds);
+  double convex_perimeter(const vector<pair<double,double>>& convHullPts);
   double dist(const pair<double, double>& pt1, const pair<double, double>& pt2);
-  vector<int> convex_hull_indices(const int& bottomPtIndx);
-  int orientation(const pair<double,double>& p, const pair<double,double>& q, const pair<double,double>& r);
+  vector<pair<double,double>> convex_hull_points(int bottomPtIndx);
   double form_factor(const double& area, const double& circumCircleArea);
   double circumscribed_circle_area(const pair<double,double>& cog);
   pair<double, double> cog();
@@ -116,7 +121,7 @@ public:
   void write_feature_vecs_to_file();
   void ros_info(const string& s, double throttle = -1);
   void ros_warn(const string& s, double throttle = -1);
-  void publish_convex_hull(const vector<int>& convHullInds);
+  void publish_convex_hull(const vector<pair<double,double>>& convHullPts, const int& bottomPtIndx);
   bool fill_gaps_in_scan();
   void interp_scan(const int& indx1, const int& indx2, const vector<int>& midInds);
   void swap(pair<double,double>& p1, pair<double,double>& p2);
