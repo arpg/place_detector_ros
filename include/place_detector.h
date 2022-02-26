@@ -14,7 +14,7 @@
 
 using namespace std;
 
-class compare
+struct compare
 {
 private:
   pair<double,double> p0;
@@ -107,7 +107,7 @@ public:
   double roundness(const double& area, const double& convexPerimeter);
   double convex_perimeter(const vector<pair<double,double>>& convHullPts);
   double dist(const pair<double, double>& pt1, const pair<double, double>& pt2);
-  vector<pair<double,double>> convex_hull_points(int bottomPtIndx);
+  vector<pair<double,double>> convex_hull_points(const int& bottomPtIndx);
   double form_factor(const double& area, const double& circumCircleArea);
   double circumscribed_circle_area(const pair<double,double>& cog);
   pair<double, double> cog();

@@ -291,7 +291,7 @@ double place_detector::dist(const pair<double, double>& pt1, const pair<double, 
 
 // **********************************************************************************
 // https://www.geeksforgeeks.org/convex-hull-set-2-graham-scan/
-vector<pair<double,double>> place_detector::convex_hull_points(int bottomPtIndx)
+vector<pair<double,double>> place_detector::convex_hull_points(const int& bottomPtIndx)
 {
   if(scanP_.size() < 3)
     return scanP_;
@@ -603,11 +603,11 @@ pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
 // **********************************************************************************
 void place_detector::write_feature_vecs_to_file()
 {
-  dataFile_ << "scan_ranges, ";
-  for(int i=0; i<scanR_.size()-1; i++)
-		dataFile_ << to_string(scanR_[i]) << ", ";
+  //dataFile_ << "scan_ranges, ";
+  //for(int i=0; i<scanR_.size()-1; i++)
+	//	dataFile_ << to_string(scanR_[i]) << ", ";
 
-  dataFile_ << to_string(scanR_.back()) << endl;
+  //dataFile_ << to_string(scanR_.back()) << endl;
 
 	dataFile_ << mostRecentLabel_;
 
