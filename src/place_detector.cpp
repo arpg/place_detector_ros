@@ -6,6 +6,16 @@ place_detector::place_detector(ros::NodeHandle* nh)
   nh_ = nh;
   load_params();
 
+  indxToLabel_.insert( make_pair(1, "corridor") );
+  indxToLabel_.insert( make_pair(2, "room") );
+  indxToLabel_.insert( make_pair(3, "junction") );
+  indxToLabel_.insert( make_pair(4, "bend") );
+
+  labelToIndx_.insert( make_pair("corridor", 1) );
+  labelToIndx_.insert( make_pair("room", 2) );
+  labelToIndx_.insert( make_pair("junction", 3) );
+  labelToIndx_.insert( make_pair("bend", 4) );
+
   if(mode_ == MODE::TEST)
   {
     test_function();
@@ -615,13 +625,20 @@ pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
 // **********************************************************************************
 void place_detector::write_feature_vecs_to_file()
 {
+  map<string,int>::iterator itr = labelToIndx_.find(mostRecentLabel_);
+  if( itr == labelToIndx_.end() )
+  {
+    ros_warn("Invalid label");
+    return;
+  }
+
   dataFile_ << "#, ";
   for(int i=0; i<scanR_.size()-1; i++)
 		dataFile_ << to_string(scanR_[i]) << ", ";
 
   dataFile_ << to_string(scanR_.back()) << endl;
 
-	dataFile_ << mostRecentLabel_;
+	dataFile_ << to_string(itr->second);
 
 	for(int i=0; i<featureVecA_.size(); i++)
 		dataFile_ << ", " << to_string(featureVecA_[i]); 
@@ -640,7 +657,6 @@ void place_detector::write_feature_vecs_to_file()
 // **********************************************************************************
 void place_detector::train_svm()
 {
-  
   cv::String fileName(filePath_);
   int headerLineCount = 0; 
   int responseStartIdx = 0; int responseEndIdx = 1;
@@ -652,24 +668,31 @@ void place_detector::train_svm()
   double trainToTestRatio = 0.75; bool shuffle = true;
   dataSet->setTrainTestSplitRatio(trainToTestRatio, shuffle); 	
   
-  int layout = cv::ml::ROW_SAMPLE;
-  bool compressSamples = true; bool compressVars = true; 
-  cv::Mat trainSamples = dataSet->getTrainSamples(layout, compressSamples, compressVars);
-  cv::Mat testSamples = dataSet->getTestSamples();
+  //int layout = cv::ml::ROW_SAMPLE;
+  //bool compressSamples = true; bool compressVars = true; 
+  //cv::Mat trainSamples = dataSet->getTrainSamples(layout, compressSamples, compressVars);
+  //cv::Mat testSamples = dataSet->getTestSamples();
 
-  cv::Mat trainResponses = dataSet->getTrainResponses();
-  cv::Mat testResponses = dataSet->getTestResponses(); 
+  //cv::Mat trainResponses = dataSet->getTrainResponses();
+  //cv::Mat testResponses = dataSet->getTestResponses(); 
 
   cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
   svm->setType(cv::ml::SVM::C_SVC);
   svm->setKernel(cv::ml::SVM::RBF);
   svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, 100, 1e-6));
   
-  trainResponses.convertTo(trainResponses, CV_32SC1);
-  trainSamples.convertTo(trainSamples, CV_32F);
-  svm->train(trainSamples, cv::ml::ROW_SAMPLE, trainResponses); 
+  //trainResponses.convertTo(trainResponses, CV_32SC1);
+  //trainSamples.convertTo(trainSamples, CV_32F);
+  //svm->train(trainSamples, cv::ml::ROW_SAMPLE, trainResponses); 
 
-  cout << svm->predict(trainSamples.row(0)) << endl;
+  svm->train(dataSet);
+
+  bool calcErrorOnTestData = false;
+  cout << "RMS Classification Error on Train Data: " << svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << endl; 
+  calcErrorOnTestData = true;
+  cout << "RMS Classification Error on Test Data: " << svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << endl; 	
+
+  //cout << svm->predict(trainSamples.row(0)) << endl;
 }
 
 // **********************************************************************************

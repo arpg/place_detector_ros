@@ -74,7 +74,8 @@ private:
   MODE mode_ = MODE::NONE;
 
   ofstream dataFile_;
-  //map<string, int> labelToIndx_;
+  map<string, int> labelToIndx_;
+  map<int, string> indxToLabel_;
 
   double scanAngleMin_ = 0;
   double scanAngleMax_ = 0;
