@@ -9,9 +9,19 @@ place_detector::place_detector(ros::NodeHandle* nh)
   if(mode_ == MODE::TEST)
   {
     test_function();
+    ros::shutdown();
+    return;
+  }
+  else if(mode_ == MODE::SVM_TRAINING)
+  {
+    ros_info("Training SVM ...");
+    train_svm();
+    ros_info("Training complete");
+    ros::shutdown();
     return;
   }
 
+  ros_info("Continuing ...");
   dataFile_.open(filePath_);
 
   scanSub_ = nh_->subscribe("scan_in", 1, &place_detector::scan_cb, this);
@@ -56,6 +66,8 @@ void place_detector::load_params()
 // **********************************************************************************
 bool place_detector::is_valid(const MODE& mode)
 {
+  if(mode_ == MODE::NONE)
+    return false;
   return (mode_ == MODE::FEATURE_EXTRACTION || mode_ == MODE::SVM_TRAINING || mode_ == MODE::REALTIME_PREDICTION || mode_ == MODE::TEST);
 }
 
@@ -603,11 +615,11 @@ pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
 // **********************************************************************************
 void place_detector::write_feature_vecs_to_file()
 {
-  //dataFile_ << "scan_ranges, ";
-  //for(int i=0; i<scanR_.size()-1; i++)
-	//	dataFile_ << to_string(scanR_[i]) << ", ";
+  dataFile_ << "#, ";
+  for(int i=0; i<scanR_.size()-1; i++)
+		dataFile_ << to_string(scanR_[i]) << ", ";
 
-  //dataFile_ << to_string(scanR_.back()) << endl;
+  dataFile_ << to_string(scanR_.back()) << endl;
 
 	dataFile_ << mostRecentLabel_;
 
@@ -624,6 +636,42 @@ void place_detector::write_feature_vecs_to_file()
   to_string(featureVecA_.size()) + " + " + to_string(featureVecB_.size()) + " = " + to_string(featureVecA_.size() + featureVecB_.size()) + 
   " in " + to_string(featureVecAComputeTime_*1e3 + featureVecBComputeTime_*1e3) + " ms" );
 }
+
+// **********************************************************************************
+void place_detector::train_svm()
+{
+  
+  cv::String fileName(filePath_);
+  int headerLineCount = 0; 
+  int responseStartIdx = 0; int responseEndIdx = 1;
+  char delimiter = ','; char missch = '?';
+  cv::String varTypeSpec = cv::String();
+  
+  cv::Ptr<cv::ml::TrainData> dataSet =  cv::ml::TrainData::loadFromCSV(fileName, headerLineCount, responseStartIdx, responseEndIdx, varTypeSpec, delimiter, missch); 
+	
+  double trainToTestRatio = 0.75; bool shuffle = true;
+  dataSet->setTrainTestSplitRatio(trainToTestRatio, shuffle); 	
+  
+  int layout = cv::ml::ROW_SAMPLE;
+  bool compressSamples = true; bool compressVars = true; 
+  cv::Mat trainSamples = dataSet->getTrainSamples(layout, compressSamples, compressVars);
+  cv::Mat testSamples = dataSet->getTestSamples();
+
+  cv::Mat trainResponses = dataSet->getTrainResponses();
+  cv::Mat testResponses = dataSet->getTestResponses(); 
+
+  cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
+  svm->setType(cv::ml::SVM::C_SVC);
+  svm->setKernel(cv::ml::SVM::RBF);
+  svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, 100, 1e-6));
+  
+  trainResponses.convertTo(trainResponses, CV_32SC1);
+  trainSamples.convertTo(trainSamples, CV_32F);
+  svm->train(trainSamples, cv::ml::ROW_SAMPLE, trainResponses); 
+
+  cout << svm->predict(trainSamples.row(0)) << endl;
+}
+
 // **********************************************************************************
 void place_detector::publish_convex_hull(const vector<pair<double,double>>& convHullPts, const int& bottomPtIndx)
 {

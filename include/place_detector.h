@@ -11,9 +11,15 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/ml.hpp>
 
 using namespace std;
 
+// **********************************************************************************
 struct compare
 {
 private:
@@ -52,10 +58,11 @@ public:
   }
 };
 
+// **********************************************************************************
 class place_detector
 {
 private:
-  enum MODE {FEATURE_EXTRACTION, REALTIME_PREDICTION, SVM_TRAINING, TEST};
+  enum MODE {FEATURE_EXTRACTION, REALTIME_PREDICTION, SVM_TRAINING, TEST, NONE};
 
   ros::NodeHandle* nh_;
 
@@ -64,7 +71,7 @@ private:
   ros::Publisher labelPub_;
   ros::Publisher convHullPub_;
 
-  MODE mode_;
+  MODE mode_ = MODE::NONE;
 
   ofstream dataFile_;
   //map<string, int> labelToIndx_;
@@ -125,6 +132,7 @@ public:
   bool fill_gaps_in_scan();
   void interp_scan(const int& indx1, const int& indx2, const vector<int>& midInds);
   void swap(pair<double,double>& p1, pair<double,double>& p2);
+  void train_svm();
 };
 
 template <typename T> ostream& operator<<(ostream& os, const vector<T>& vecIn);
