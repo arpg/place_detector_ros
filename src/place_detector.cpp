@@ -86,28 +86,22 @@ void place_detector::test_function()
 {
   ros_warn("TEST FUNCTION CALLED, COMMENT IT OUT IF PROCESSING REALTIME DATA");
   scanR_.resize(0);
-  scanR_.push_back(20.5);
-  scanR_.push_back(20.0);
-  scanR_.push_back(20.5);
-  scanR_.push_back(20.5);
-  scanR_.push_back(20.5);
-  scanR_.push_back(20.5);
-  scanR_.push_back(5.5);
-  scanR_.push_back(20.5);
+  scanR_.push_back(NAN);
+  scanR_.push_back(NAN);
+  scanR_.push_back(NAN);
+  scanR_.push_back(NAN);
+  scanR_.push_back(NAN);
+  scanR_.push_back(NAN);
+  scanR_.push_back(NAN);
+  scanR_.push_back(NAN);
 
   scanAngleMin_ = 0;
   scanAngleMax_ = 0 + pi_/4*7;
   scanAngleInc_ = pi_/4;
 
-  update_feature_vec_a();
-  update_feature_vec_b();
-
-  mostRecentLabel_ = "corridor";
-  write_feature_vecs_to_file();
-  //cout << "done" << endl;
-  //cout << scanP_ << endl;
-  //update_feature_vec_b();
-  //cout << featureVecB_ << endl;
+  fill_gaps_in_scan();
+  cout << scanR_ << endl;
+  cout << "done" << endl;
 }
 
 // **********************************************************************************
@@ -663,36 +657,65 @@ void place_detector::train_svm()
   char delimiter = ','; char missch = '?';
   cv::String varTypeSpec = cv::String();
   
-  cv::Ptr<cv::ml::TrainData> dataSet =  cv::ml::TrainData::loadFromCSV(fileName, headerLineCount, responseStartIdx, responseEndIdx, varTypeSpec, delimiter, missch); 
+  cv::Ptr<cv::ml::TrainData> dataSet =  cv::ml::TrainData::loadFromCSV(fileName, headerLineCount, responseStartIdx, responseEndIdx, varTypeSpec, delimiter, missch);
 	
-  double trainToTestRatio = 0.75; bool shuffle = true;
-  dataSet->setTrainTestSplitRatio(trainToTestRatio, shuffle); 	
-  
-  //int layout = cv::ml::ROW_SAMPLE;
-  //bool compressSamples = true; bool compressVars = true; 
-  //cv::Mat trainSamples = dataSet->getTrainSamples(layout, compressSamples, compressVars);
-  //cv::Mat testSamples = dataSet->getTestSamples();
-
-  //cv::Mat trainResponses = dataSet->getTrainResponses();
-  //cv::Mat testResponses = dataSet->getTestResponses(); 
+  double trainToTestRatio = 0.90; bool shuffle = true;
+  dataSet->setTrainTestSplitRatio(trainToTestRatio, shuffle); 	   
 
   cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
   svm->setType(cv::ml::SVM::C_SVC);
   svm->setKernel(cv::ml::SVM::RBF);
   svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, 100, 1e-6));
-  
-  //trainResponses.convertTo(trainResponses, CV_32SC1);
-  //trainSamples.convertTo(trainSamples, CV_32F);
-  //svm->train(trainSamples, cv::ml::ROW_SAMPLE, trainResponses); 
 
   svm->train(dataSet);
 
-  bool calcErrorOnTestData = false;
-  cout << "RMS Classification Error on Train Data: " << svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << endl; 
-  calcErrorOnTestData = true;
-  cout << "RMS Classification Error on Test Data: " << svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << endl; 	
+  if(svm->isTrained())
+    ros_info("Training complete");
+  else
+    ros_warn("Training failed");
 
-  //cout << svm->predict(trainSamples.row(0)) << endl;
+  cout << endl << "<=========== Training labels count ===========>" << endl;
+  cv::Mat trainLabels = dataSet->getTrainResponses();
+  trainLabels.convertTo(trainLabels, CV_32SC1);
+  print_label_counts_svm(trainLabels);
+
+  cout << "<============= Test labels count =============>" << endl;
+  cv::Mat testLabels = dataSet->getTestResponses();
+  testLabels.convertTo(testLabels, CV_32SC1);
+  print_label_counts_svm(testLabels);
+  
+  cout << "<====== Missclassification Percentage ========>" << endl;
+  bool calcErrorOnTestData = false;
+  cout << "Train samples: " << svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << endl; 
+  calcErrorOnTestData = true;
+  cout << "Test samples: " << svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << endl; 	
+
+  cout << endl;
+}
+
+// **********************************************************************************
+void place_detector::print_label_counts_svm(const cv::Mat& reponsesMat)
+{
+  map<int, int> indxToCount;
+  for(int i=0; i<reponsesMat.rows; i++)
+  {
+    int respIndx = reponsesMat.at<int>(i, 0);
+    //cout << respIndx << endl;
+    map<int,int>::iterator itr = indxToCount.find(respIndx);
+    if( itr ==  indxToCount.end())
+      indxToCount.insert( make_pair(respIndx, 1) );
+    else
+      itr->second++;
+  }
+
+  for(map<int,int>::iterator itr=indxToCount.begin(); itr!=indxToCount.end(); ++itr)
+  {
+    map<int,string>::iterator itrr = indxToLabel_.find(itr->first);
+    if( itrr == indxToLabel_.end() )
+      cout << "unknown: " << itr->second << endl;
+    else
+      cout << itrr->second + ": " << itr->second << endl;
+  }
 }
 
 // **********************************************************************************

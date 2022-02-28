@@ -134,6 +134,7 @@ public:
   void interp_scan(const int& indx1, const int& indx2, const vector<int>& midInds);
   void swap(pair<double,double>& p1, pair<double,double>& p2);
   void train_svm();
+  void print_label_counts_svm(const cv::Mat& reponsesMat);
 };
 
 template <typename T> ostream& operator<<(ostream& os, const vector<T>& vecIn);

@@ -5,6 +5,10 @@
 <arg name = "rviz_config" default = "$(find place_detector)/rviz/feature_extraction.rviz"/>
 <arg name = "bag_file_path" default = "/home/shakeeb/Downloads/D02_ouster_imu_2021-09-27-12-06-12_0.bag"/>
 
+<arg name = "M_PI" value = "3.141592653589793238"/>
+<arg name = "M_PI_NEG" value = "-3.141592653589793238"/>
+<arg name = "M_PI_360" value = "$(eval 3.141592653589793238/360)"/>
+
 <param name = "use_sim_time" value = "true"/>
 
 <node name="place_detector" type="place_detector_node" pkg="place_detector" output="screen">
@@ -16,15 +20,16 @@
   <remap from = "scan" to = "/place_detector/scan_in"/>
   <remap from = "cloud_in" to = "/D02/horiz/os_cloud_node/points"/>
 
-  <param name="angle_min" value = "-3.14159"/>
-  <param name="angle_max" value = "3.14159"/>
-  <param name="range_min" value = "0.45"/>
+  <param name="angle_min" value = "$(arg M_PI_NEG)"/>
+  <param name="angle_max" value = "$(arg M_PI)"/>
+	<param name="angle_increment" value = "$(arg M_PI_360)"/>
+  <param name="range_min" value = "0.20"/>
   <param name="range_max" value = "100"/>
   <param name="use_inf" value = "true"/>
 </node>
 
 <node pkg="rviz" type="rviz" name="place_detector_ui" output="screen" args="-d $(arg rviz_config)"/>
 
-<node pkg="rosbag" type="play" name="rosbag_play" output="screen" args="--clock $(arg bag_file_path) --pause -l"/>
+<node pkg="rosbag" type="play" name="rosbag_play" output="screen" args="--clock $(arg bag_file_path) --pause -r 10 -l"/>
 
 </launch>

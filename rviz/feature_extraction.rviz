@@ -9,6 +9,7 @@ Panels:
         - /LaserScan1
         - /Convex Hull1
         - /Convex Hull1/Namespaces1
+        - /Axes1
       Splitter Ratio: 0.5
     Tree Height: 728
   - Class: rviz/Selection
@@ -119,6 +120,13 @@ Visualization Manager:
         {}
       Queue Size: 100
       Value: false
+    - Class: rviz/Axes
+      Enabled: true
+      Length: 2.5
+      Name: Axes
+      Radius: 0.5
+      Reference Frame: <Fixed Frame>
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -154,9 +162,9 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.168474480509758
-        Y: -0.1616838574409485
-        Z: -15.836692810058594
+        X: 6.508519649505615
+        Y: 0.1632676124572754
+        Z: -15.830010414123535
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -165,7 +173,7 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.120392322540283
+      Yaw: 3.135392665863037
     Saved: ~
 Window Geometry:
   Displays:
