@@ -5,6 +5,7 @@
 #include "visualization_msgs/MarkerArray.h"
 #include "geometry_msgs/Point.h"
 #include "std_msgs/ColorRGBA.h"
+#include "sensor_msgs/LaserScan.h"
 
 #include <fstream>
 #include <numeric>
@@ -16,6 +17,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/ml.hpp>
+#include <stack>
 
 using namespace std;
 
@@ -62,7 +64,7 @@ public:
 class place_detector
 {
 private:
-  enum MODE {FEATURE_EXTRACTION, REALTIME_PREDICTION, SVM_TRAINING, TEST, NONE};
+  enum MODE {RECORD_SCANS, REALTIME_PREDICTION, FEATURE_EXTRACTION, LABEL_SCANS, SVM_TRAINING, TEST, NONE};
 
   ros::NodeHandle* nh_;
 
@@ -70,6 +72,7 @@ private:
   ros::Subscriber labelSub_;
   ros::Publisher labelPub_;
   ros::Publisher convHullPub_;
+  ros::Publisher scanPub_;
 
   MODE mode_ = MODE::NONE;
 
@@ -99,7 +102,13 @@ private:
 
   int nFeatureVecsWritten_ = 0;
 
-  double pi_ = atan(1)*4;
+  vector<vector<string>> rawScansIn_; // used for label scans mode
+  vector<vector<string>> labelledScansOut_; // used for label scans mode
+  vector<vector<string>> featuresOut_; // used for label scans mode
+  int scanLabelItr_ = -1; // iterator of the scan curently being shown
+  stack<string> labelActions_; // used for label scans mode
+
+  const double pi_ = atan(1)*4;
 
 public:
   place_detector(ros::NodeHandle* nh);
@@ -135,6 +144,11 @@ public:
   void swap(pair<double,double>& p1, pair<double,double>& p2);
   void train_svm();
   void print_label_counts_svm(const cv::Mat& reponsesMat);
+
+  void label_scans();
+  void publish_raw_scan(const int& row);
+  vector<vector<string>> read_from_file();
+  void write_to_file(const vector<vector<string>>& contentIn);
 };
 
 template <typename T> ostream& operator<<(ostream& os, const vector<T>& vecIn);

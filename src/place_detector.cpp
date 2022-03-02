@@ -16,6 +16,7 @@ place_detector::place_detector(ros::NodeHandle* nh)
   labelToIndx_.insert( make_pair("junction", 3) );
   labelToIndx_.insert( make_pair("bend", 4) );
 
+  // offline modes
   if(mode_ == MODE::TEST)
   {
     test_function();
@@ -30,12 +31,24 @@ place_detector::place_detector(ros::NodeHandle* nh)
     ros::shutdown();
     return;
   }
+  else if(mode_ = MODE::LABEL_SCANS)
+  {
+    ros_info("Open RViz to visualize scans and publish labels");
+    rawScansIn_ = read_from_file();
+    labelSub_ = nh_->subscribe("label_in", 1, &place_detector::label_cb, this);
 
+    ros_info("Congrats! All scans are labelled");
+    ros::shutdown();
+    return;
+  }
+
+
+  // continue for online modes
   ros_info("Continuing ...");
   dataFile_.open(filePath_);
 
   scanSub_ = nh_->subscribe("scan_in", 1, &place_detector::scan_cb, this);
-  labelSub_ = nh_->subscribe("label_in", 1, &place_detector::label_cb, this);
+  scanPub_ = nh->advertise<sensor_msgs::LaserScan>("scan_out", 1);
 
   labelPub_ = nh_->advertise<std_msgs::String>("label_out", 1);
   convHullPub_ = nh_->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
@@ -58,7 +71,11 @@ void place_detector::load_params()
     string mode = "";
     nh_->getParam("mode", mode);
 
-    if( mode == "feature_extraction" )
+    if( mode == "record_scans" )
+      mode_ = MODE::RECORD_SCANS;
+    else if( mode == "label_scans" )
+      mode_ = MODE::LABEL_SCANS;
+    else if( mode == "feature_extraction" )
       mode_ = MODE::FEATURE_EXTRACTION;
     else if( mode == "svm_training" )
       mode_ = MODE::SVM_TRAINING;
@@ -78,7 +95,8 @@ bool place_detector::is_valid(const MODE& mode)
 {
   if(mode_ == MODE::NONE)
     return false;
-  return (mode_ == MODE::FEATURE_EXTRACTION || mode_ == MODE::SVM_TRAINING || mode_ == MODE::REALTIME_PREDICTION || mode_ == MODE::TEST);
+  return (mode_ == MODE::RECORD_SCANS || mode_ == MODE::LABEL_SCANS || 
+          mode_ == MODE::FEATURE_EXTRACTION || mode_ == MODE::SVM_TRAINING || mode_ == MODE::REALTIME_PREDICTION || mode_ == MODE::TEST);
 }
 
 // **********************************************************************************
@@ -105,10 +123,144 @@ void place_detector::test_function()
 }
 
 // **********************************************************************************
+vector<vector<string>> place_detector::read_from_file()
+{
+  ifstream dataFile;
+  dataFile.open(filePath_);
+
+  vector<vector<string>> content;
+  vector<string> row;
+	string line, word;
+
+  while(getline(dataFile, line))
+  {
+    row.resize(0);
+
+    stringstream str(line);
+  
+    while(getline(str, word, ','))
+      row.push_back(word);
+    content.push_back(row);
+  }
+
+  dataFile.close();
+
+  return content;
+}
+
+// **********************************************************************************
+void place_detector::write_to_file(const vector<vector<string>>& contentIn)
+{
+  ofstream dataFile;
+  dataFile.open(filePath_);
+
+  for(int i=0; i<contentIn.size(); i++)
+  {
+    for(int j=0; j<contentIn[i].size(); j++)
+    {
+      if(j==0)
+        dataFile << contentIn[i][j];
+      else
+        dataFile << ", " << contentIn[i][j];
+    }
+
+    if( i < (contentIn.size()-1) )
+      dataFile << endl;
+  }
+
+  dataFile.close();
+}
+
+// **********************************************************************************
 void place_detector::label_cb(const std_msgs::String& labelMsg)
 {
-	mostRecentLabel_ = labelMsg.data;
-	mostRecentLabelTime_ = ros::Time::now();
+  // labels 'undo', 'skip', 'start' and 'done' are reserved for commands
+
+  if(rawScansIn_.size() < 1)
+  {
+    ros_warn("Not enough scans to label");
+    return;
+  }
+  if(scanLabelItr_ >= rawScansIn_.size()-1 )
+    ros_warn("No scans left to label");
+  
+  if(labelMsg.data == "done")
+  {
+    ros_info("Writing labelled scans to file");
+    write_to_file(labelledScansOut_);
+    write_to_file(featuresOut_, "features");
+    ros_info("Done writing, you may close the processes now");
+    return;
+  }
+
+  if(scanLabelItr_ < 0)
+  {
+    publish_raw_scan(0);
+    scanLabelItr_ = 0;
+    return;
+  }
+
+  if(labelMsg.data == "undo" && !labelActions_.empty())
+  {
+    string lastAction = labelActions_.top();
+    if(lastAction == "skip")
+      scanLabelItr_ = max(scanLabelItr_-1, 0);
+    else if(lastAction == "labelled")
+    {
+      scanLabelItr_ = max(scanLabelItr_-1, 0);
+      labelledScansOut_.pop_back();
+      featuresOut_.pop_back();
+    }
+    labelActions_.pop();
+  }
+  else if(labelMsg.data == "undo")
+    ros_warn("Nothing to undo");
+
+  else if(labelMsg.data == "skip" && scanLabelItr_ < rawScansIn_.size()-1)
+  {
+    scanLabelItr_++;
+    labelActions_.push("skip");
+  }
+  else if(labelMsg.data == "skip")
+    ros_warn("Nothing to skip");
+
+  else // label
+  {
+    vector<string> labelledScan, featureVec;
+    labelledScan.push_back(labelMsg.data);
+    featureVec.push_back(labelMsg.data);
+    for( int i=0; i<rawScansIn_[scanLabelItr_].size(); i++ )
+    {
+      labelledScan.push_back(rawScansIn_[scanLabelItr_][i]);
+      featureVec.push_back();
+    }
+    labelledScansOut_.push_back(labelledScan);
+    featuresOut_.push_back();
+
+    
+    scanLabelItr_ = min(scanLabelItr_+1, int(rawScansIn_.size()-1));
+    labelActions_.push("labelled");
+  }
+	
+  publish_raw_scan(scanLabelItr_);  
+}
+// **********************************************************************************
+void place_detector::publish_raw_scan(const int& row)
+{
+  sensor_msgs::LaserScan scanOut;
+  scanOut.header.stamp = ros::Time::now();
+  scanOut.header.frame_id = scanFrameId_; // TODO: set this in params
+  scanOut.angle_min = -pi_;
+  scanOut.angle_increment = 360/(rawScansIn_[row].size()+1);
+  scanOut.range_min = 0;
+  scanOut.range_max = FLT_MAX;
+
+  for(int i = 3; i<rawScansIn_[row].size() ;i++)
+    scanOut.ranges.push_back(stod(rawScansIn_[row][i]));
+
+  scanPub_.publish(scanOut);
+  scanPub_.publish(scanOut);
+  scanPub_.publish(scanOut); // in case if first packet is missed
 }
 
 // **********************************************************************************

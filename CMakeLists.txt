@@ -9,6 +9,7 @@ project(place_detector)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
+  sensor_msgs
   nav_msgs
   roscpp
   rospy
