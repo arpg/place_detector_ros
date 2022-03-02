@@ -34,22 +34,22 @@ place_detector::place_detector(ros::NodeHandle* nh)
   else if(mode_ = MODE::LABEL_SCANS)
   {
     ros_info("Open RViz to visualize scans and publish labels");
-    rawScansIn_ = read_from_file();
+    rawScansIn_ = read_num_csv(filePath_+"/raw_scans/dataset.csv");
     labelSub_ = nh_->subscribe("label_in", 1, &place_detector::label_cb, this);
+    scanPub_ = nh->advertise<sensor_msgs::LaserScan>("scan_out", 1);
 
     ros_info("Congrats! All scans are labelled");
     ros::shutdown();
     return;
   }
 
-
   // continue for online modes
   ros_info("Continuing ...");
-  dataFile_.open(filePath_);
+  if(mode_ = MODE::LABEL_SCANS)
+    dataFile_.open(filePath_);
 
   scanSub_ = nh_->subscribe("scan_in", 1, &place_detector::scan_cb, this);
-  scanPub_ = nh->advertise<sensor_msgs::LaserScan>("scan_out", 1);
-
+  
   labelPub_ = nh_->advertise<std_msgs::String>("label_out", 1);
   convHullPub_ = nh_->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
 
@@ -59,7 +59,9 @@ place_detector::place_detector(ros::NodeHandle* nh)
 // **********************************************************************************
 place_detector::~place_detector()
 {
-  dataFile_.close();
+  if(dataFile_.is_open())
+    dataFile_.close();
+  delete nh_;
 }
 // **********************************************************************************
 void place_detector::load_params()
@@ -75,8 +77,6 @@ void place_detector::load_params()
       mode_ = MODE::RECORD_SCANS;
     else if( mode == "label_scans" )
       mode_ = MODE::LABEL_SCANS;
-    else if( mode == "feature_extraction" )
-      mode_ = MODE::FEATURE_EXTRACTION;
     else if( mode == "svm_training" )
       mode_ = MODE::SVM_TRAINING;
     else if( mode == "realtime_prediction" )
@@ -96,7 +96,7 @@ bool place_detector::is_valid(const MODE& mode)
   if(mode_ == MODE::NONE)
     return false;
   return (mode_ == MODE::RECORD_SCANS || mode_ == MODE::LABEL_SCANS || 
-          mode_ == MODE::FEATURE_EXTRACTION || mode_ == MODE::SVM_TRAINING || mode_ == MODE::REALTIME_PREDICTION || mode_ == MODE::TEST);
+          mode_ == MODE::SVM_TRAINING || mode_ == MODE::REALTIME_PREDICTION || mode_ == MODE::TEST);
 }
 
 // **********************************************************************************
@@ -123,13 +123,13 @@ void place_detector::test_function()
 }
 
 // **********************************************************************************
-vector<vector<string>> place_detector::read_from_file()
+vector<vector<double>> place_detector::read_num_csv(const string& filePath)
 {
   ifstream dataFile;
-  dataFile.open(filePath_);
+  dataFile.open(filePath);
 
-  vector<vector<string>> content;
-  vector<string> row;
+  vector<vector<double>> content;
+  vector<double> row;
 	string line, word;
 
   while(getline(dataFile, line))
@@ -139,7 +139,7 @@ vector<vector<string>> place_detector::read_from_file()
     stringstream str(line);
   
     while(getline(str, word, ','))
-      row.push_back(word);
+      row.push_back( stod(word) );
     content.push_back(row);
   }
 
@@ -149,19 +149,19 @@ vector<vector<string>> place_detector::read_from_file()
 }
 
 // **********************************************************************************
-void place_detector::write_to_file(const vector<vector<string>>& contentIn)
+void place_detector::write_num_csv(const vector<vector<double>>& contentIn, const string& filePath)
 {
   ofstream dataFile;
-  dataFile.open(filePath_);
+  dataFile.open(filePath);
 
   for(int i=0; i<contentIn.size(); i++)
   {
     for(int j=0; j<contentIn[i].size(); j++)
     {
       if(j==0)
-        dataFile << contentIn[i][j];
+        dataFile << to_string(contentIn[i][j]);
       else
-        dataFile << ", " << contentIn[i][j];
+        dataFile << ", " << to_string(contentIn[i][j]);
     }
 
     if( i < (contentIn.size()-1) )
@@ -176,49 +176,50 @@ void place_detector::label_cb(const std_msgs::String& labelMsg)
 {
   // labels 'undo', 'skip', 'start' and 'done' are reserved for commands
 
+  // Sanity checks
+  if(labelMsg.data == "done")
+  {
+    ros_info("Writing labelled scans to file");
+    write_num_csv(labelledScansOut_, filePath_+"/labelled_scans/dataset.csv");
+    write_num_csv(labelledFeaturesOut_, filePath_+"/labelled_features/dataset.csv");
+    ros_info("Done writing, you may close the processes now");
+    return;
+  }
   if(rawScansIn_.size() < 1)
   {
     ros_warn("Not enough scans to label");
     return;
   }
-  if(scanLabelItr_ >= rawScansIn_.size()-1 )
+  if(rawScanItr_ >= rawScansIn_.size()-1 )
     ros_warn("No scans left to label");
   
-  if(labelMsg.data == "done")
-  {
-    ros_info("Writing labelled scans to file");
-    write_to_file(labelledScansOut_);
-    write_to_file(featuresOut_, "features");
-    ros_info("Done writing, you may close the processes now");
-    return;
-  }
-
-  if(scanLabelItr_ < 0)
+  if(rawScanItr_ < 0)
   {
     publish_raw_scan(0);
-    scanLabelItr_ = 0;
+    rawScanItr_ = 0;
     return;
   }
 
+  // Actions to perform
   if(labelMsg.data == "undo" && !labelActions_.empty())
   {
     string lastAction = labelActions_.top();
     if(lastAction == "skip")
-      scanLabelItr_ = max(scanLabelItr_-1, 0);
+      rawScanItr_ = max(rawScanItr_-1, 0);
     else if(lastAction == "labelled")
     {
-      scanLabelItr_ = max(scanLabelItr_-1, 0);
+      rawScanItr_ = max(rawScanItr_-1, 0);
       labelledScansOut_.pop_back();
-      featuresOut_.pop_back();
+      labelledFeaturesOut_.pop_back();
     }
     labelActions_.pop();
   }
   else if(labelMsg.data == "undo")
     ros_warn("Nothing to undo");
 
-  else if(labelMsg.data == "skip" && scanLabelItr_ < rawScansIn_.size()-1)
+  else if(labelMsg.data == "skip" && rawScanItr_ < rawScansIn_.size()-1)
   {
-    scanLabelItr_++;
+    rawScanItr_++;
     labelActions_.push("skip");
   }
   else if(labelMsg.data == "skip")
@@ -226,24 +227,61 @@ void place_detector::label_cb(const std_msgs::String& labelMsg)
 
   else // label
   {
-    vector<string> labelledScan, featureVec;
-    labelledScan.push_back(labelMsg.data);
-    featureVec.push_back(labelMsg.data);
-    for( int i=0; i<rawScansIn_[scanLabelItr_].size(); i++ )
-    {
-      labelledScan.push_back(rawScansIn_[scanLabelItr_][i]);
-      featureVec.push_back();
-    }
-    labelledScansOut_.push_back(labelledScan);
-    featuresOut_.push_back();
+    bool success = append_labelled_data(rawScanItr_, labelMsg.data);
 
-    
-    scanLabelItr_ = min(scanLabelItr_+1, int(rawScansIn_.size()-1));
-    labelActions_.push("labelled");
+    if(!success && rawScanItr_ < rawScansIn_.size()-1)
+    {
+      rawScanItr_++;
+      labelActions_.push("skip");
+    }
+    else if(success && rawScanItr_ < rawScansIn_.size()-1)
+
+    rawScanItr_ = min(rawScanItr_+1, int(rawScansIn_.size()-1));
+    if(success) {labelActions_.push("labelled");}
   }
 	
-  publish_raw_scan(scanLabelItr_);  
+  publish_raw_scan(rawScanItr_);  
 }
+// **********************************************************************************
+bool place_detector::append_labelled_data(const int& rawScanIndx, const string& label)
+{
+  map<string,int>::iterator itr = labelToIndx_.find(label);
+  if( itr == labelToIndx_.end() )
+  {
+    ros_warn("Invalid label");
+    return false;
+  }
+
+  vector<double> labelledScan, featureVec;
+  labelledScan.push_back( itr->second );
+  featureVec.push_back( itr->second );
+
+  scanR_ = vector<double>(rawScansIn_[rawScanIndx].begin()+3, rawScansIn_[rawScanIndx].end());
+  labelledScan.insert(labelledScan.end(), rawScansIn_[rawScanIndx].begin(), rawScansIn_[rawScanIndx].end());
+
+  if(scanR_.size() < 5 || !fill_gaps_in_scan())
+  {
+    ros_warn("Invalid laser scan");
+    return false;
+  }
+
+  double computeTimeA = 0; double computeTimeB = 0;
+  vector<double> featureVecA = feature_vec_a(computeTimeA);
+  vector<double> featureVecB = feature_vec_b(computeTimeB);
+
+  featureVec.insert(featureVec.end(), featureVecA.begin(), featureVecA.end());
+  featureVec.insert(featureVec.end(), featureVecB.begin(), featureVecB.end());
+  
+  labelledScansOut_.push_back(labelledScan);
+  labelledFeaturesOut_.push_back(featureVec);
+
+  ros_info( to_string(rawScanIndx) + ": Calculated feature vector of size " + 
+  to_string(featureVecA.size()) + " + " + to_string(featureVecB.size()) + " = " + to_string(featureVecA.size() + featureVecB_.size()) + 
+  " in " + to_string(computeTimeA*1e3 + computeTimeB*1e3) + " ms" );
+
+  return true;
+}
+
 // **********************************************************************************
 void place_detector::publish_raw_scan(const int& row)
 {
@@ -256,7 +294,7 @@ void place_detector::publish_raw_scan(const int& row)
   scanOut.range_max = FLT_MAX;
 
   for(int i = 3; i<rawScansIn_[row].size() ;i++)
-    scanOut.ranges.push_back(stod(rawScansIn_[row][i]));
+    scanOut.ranges.push_back( rawScansIn_[row][i] );
 
   scanPub_.publish(scanOut);
   scanPub_.publish(scanOut);
@@ -270,39 +308,17 @@ void place_detector::scan_cb(const sensor_msgs::LaserScan& scanMsg)
     ros_warn("Not enough points in the laser scan", 1);
 
   scanFrameId_ = scanMsg.header.frame_id;
-  if(mode_ == MODE::FEATURE_EXTRACTION)
-    scan_cb_feature_extraction_mode(scanMsg);
-  //else ...
-}
-
-// **********************************************************************************
-void place_detector::scan_cb_feature_extraction_mode(const sensor_msgs::LaserScan& scanMsg)
-{
-	if(mostRecentLabel_ == "")
-		return;
-
-	if( (ros::Time::now() - mostRecentLabelTime_).toSec() > 0.1 )
-	{
-		ros_warn("Most recent label is stale", 5);
-		return;
-	}
-
-  scanAngleMin_ = scanMsg.angle_min;
-  scanAngleMax_ = scanMsg.angle_max;
-  scanAngleInc_ = scanMsg.angle_increment;
-  scanR_ = scanMsg.ranges;
-
-  if(!fill_gaps_in_scan())
+  
+  if(mode_ == MODE::RECORD_SCANS)
   {
-    ros_warn("Invalid laser scan");
-		return;
+    geometry_msgs::Pose robPose; // get_robot_pose();
+
+    dataFile << robPose.position.x << ", " robPose.position.y << ", " << robPose.position.z;
+
+    for(int i=0; i<scanMsg.data.size(); i++)
+      dataFile_ << ", " << to_string(scanMsg.data[i]);
   }
-
-  update_feature_vec_a();
-  update_feature_vec_b();
-	write_feature_vecs_to_file();
-
-  mostRecentLabel_ = "";
+    
 }
 
 // **********************************************************************************
@@ -358,45 +374,46 @@ void place_detector::interp_scan(const int& indx1, const int& indx2, const vecto
 }
 
 // **********************************************************************************
-void place_detector::update_feature_vec_b()
+vector<double> place_detector::feature_vec_b(double& computeTime)
 {
   ros::Time startTime = ros::Time::now();
 
-  featureVecB_.resize(0);
+  vector<double> featureVecB;
+  featureVecB.resize(0);
 
   int bottomPtIndx;
   pair<double,double> area_perimeter = area_perimeter_polygon(bottomPtIndx); // updates scanP_ and bottomPtIndx_ to be used by later functions
-  featureVecB_.push_back(area_perimeter.first);
-  featureVecB_.push_back(area_perimeter.second);
+  featureVecB.push_back(area_perimeter.first);
+  featureVecB.push_back(area_perimeter.second);
 
   if( abs(area_perimeter.second) < 1e-6 )
     ros_warn("Scan perimeter is zero");
 
-  featureVecB_.push_back( area_perimeter.first / area_perimeter.second );
+  featureVecB.push_back( area_perimeter.first / area_perimeter.second );
 
   pair<double,double> cogVal = cog();
   //cout << "cog: " << cogVal << endl;
 
   vector<double> secondOrderCentralMoments(3,0);
   vector<double> sevenInvariants = seven_invariants(cogVal, secondOrderCentralMoments);
-  featureVecB_.insert( featureVecB_.end(), sevenInvariants.begin(), sevenInvariants.end() );
+  featureVecB.insert( featureVecB.end(), sevenInvariants.begin(), sevenInvariants.end() );
 
-  featureVecB_.push_back( compactness(area_perimeter.first, area_perimeter.second) );
-  featureVecB_.push_back( eccentricity(area_perimeter.first, secondOrderCentralMoments) );
+  featureVecB.push_back( compactness(area_perimeter.first, area_perimeter.second) );
+  featureVecB.push_back( eccentricity(area_perimeter.first, secondOrderCentralMoments) );
 
   double circumCircleArea = circumscribed_circle_area(cogVal);
   //cout << "circumcircle area: " << circumCircleArea << endl; 
-  featureVecB_.push_back( form_factor(area_perimeter.first, circumCircleArea) );
+  featureVecB.push_back( form_factor(area_perimeter.first, circumCircleArea) );
 
   //cout << "Bottom Point Indx: " << bottomPtIndx << endl;
   vector<pair<double,double>> convHullPts = convex_hull_points(bottomPtIndx); // requires bottomPtIndx to be set first
   //cout << "convex hull points: " << convHullPts << endl;
   double convexPerimeter = convex_perimeter(convHullPts);
   //cout << "convex perimeter: " << convexPerimeter << endl;
-  featureVecB_.push_back( roundness(area_perimeter.first, convexPerimeter) );
+  featureVecB.push_back( roundness(area_perimeter.first, convexPerimeter) );
   
   publish_convex_hull(convHullPts, bottomPtIndx);
-  featureVecBComputeTime_ = ( ros::Time::now() - startTime ).toSec();
+  computeTime = ( ros::Time::now() - startTime ).toSec();
 }
 
 // **********************************************************************************
@@ -687,16 +704,17 @@ pair<double,double> place_detector::area_perimeter_polygon(int& bottomPtIndx)
 }
 
 // **********************************************************************************
-void place_detector::update_feature_vec_a()
+vector<double> place_detector::feature_vec_a(double& computeTime)
 {
   ros::Time startTime = ros::Time::now();
 
-  featureVecA_.resize(0);
+  vector<double> featureVecA;
+  featureVecA.resize(0);
 
   pair<double, double> meanSdev = mean_sdev_range_diff(DBL_MAX);
 
-  featureVecA_.push_back(meanSdev.first);
-  featureVecA_.push_back(meanSdev.second);
+  featureVecA.push_back(meanSdev.first);
+  featureVecA.push_back(meanSdev.second);
 
   const double delRange = 5;
   const double maxRange = 50;
@@ -705,17 +723,17 @@ void place_detector::update_feature_vec_a()
   {
     pair<double, double> meanSdev = mean_sdev_range_diff(i);
 
-    featureVecA_.push_back(meanSdev.first);
-    featureVecA_.push_back(meanSdev.second);
+    featureVecA.push_back(meanSdev.first);
+    featureVecA.push_back(meanSdev.second);
   }
 
   if(scanR_.size() < 1)
     ros_warn("Scan size is zero");
 
-  featureVecA_.push_back( accumulate(scanR_.begin(), scanR_.end(), 0.0) / scanR_.size() );
+  featureVecA.push_back( accumulate(scanR_.begin(), scanR_.end(), 0.0) / scanR_.size() );
   double sqSum = inner_product(scanR_.begin(), scanR_.end(), scanR_.begin(), 0.0);
-  double sdev = sqrt(sqSum / scanR_.size() - featureVecA_.back() * featureVecA_.back());
-  featureVecA_.push_back(sdev);
+  double sdev = sqrt(sqSum / scanR_.size() - featureVecA.back() * featureVecA.back());
+  featureVecA.push_back(sdev);
   
   const double delGap1 = 1.0;
   const double maxGap1 = 20.0;
@@ -723,7 +741,7 @@ void place_detector::update_feature_vec_a()
   for(double i=delGap1; i<=maxGap1; i+=delGap1)
   {
     int nGaps = n_gaps(i);
-    featureVecA_.push_back(nGaps);
+    featureVecA.push_back(nGaps);
   }
 
   const double delGap2 = 5.0;
@@ -731,10 +749,11 @@ void place_detector::update_feature_vec_a()
   for(double i=maxGap1+delGap2; i<=maxGap2; i+=delGap2)
   {
     int nGaps = n_gaps(i);
-    featureVecA_.push_back(nGaps);
+    featureVecA.push_back(nGaps);
   }
 
-  featureVecAComputeTime_ = ( ros::Time::now() - startTime ).toSec();
+  computeTime = ( ros::Time::now() - startTime ).toSec();
+  return featureVecA;
 }
 
 // **********************************************************************************
@@ -751,7 +770,7 @@ int place_detector::n_gaps(const double& thresh)
 }
 
 // **********************************************************************************
-pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
+pair<double, double> place_detector::mean_sdev_range_diff(const double& thresh)
 {
   vector<double> lenDiff;
   lenDiff.push_back( abs( min(scanR_[0], thresh) - min(scanR_.back(), thresh) ) );
@@ -767,37 +786,6 @@ pair<double, double> place_detector::mean_sdev_range_diff(const float& thresh)
   double sdev = sqrt(sqSum / lenDiff.size() - mean * mean);
 
   return make_pair(mean, sdev);
-}
-// **********************************************************************************
-void place_detector::write_feature_vecs_to_file()
-{
-  map<string,int>::iterator itr = labelToIndx_.find(mostRecentLabel_);
-  if( itr == labelToIndx_.end() )
-  {
-    ros_warn("Invalid label");
-    return;
-  }
-
-  dataFile_ << "#, ";
-  for(int i=0; i<scanR_.size()-1; i++)
-		dataFile_ << to_string(scanR_[i]) << ", ";
-
-  dataFile_ << to_string(scanR_.back()) << endl;
-
-	dataFile_ << to_string(itr->second);
-
-	for(int i=0; i<featureVecA_.size(); i++)
-		dataFile_ << ", " << to_string(featureVecA_[i]); 
-
-  for(int i=0; i<featureVecB_.size(); i++)
-		dataFile_ << ", " << to_string(featureVecB_[i]); 
-		
-	dataFile_ << endl;
-
-  nFeatureVecsWritten_++;
-  ros_info( to_string(nFeatureVecsWritten_) + ": Written feature vector of size " + 
-  to_string(featureVecA_.size()) + " + " + to_string(featureVecB_.size()) + " = " + to_string(featureVecA_.size() + featureVecB_.size()) + 
-  " in " + to_string(featureVecAComputeTime_*1e3 + featureVecBComputeTime_*1e3) + " ms" );
 }
 
 // **********************************************************************************
@@ -945,31 +933,6 @@ void place_detector::publish_convex_hull(const vector<pair<double,double>>& conv
   markerArr.markers.push_back(marker);
   convHullPub_.publish(markerArr);
 }
-
-// **********************************************************************************
-/*
-void update_training_data()
-{
-  string line, word;
-  while( getline(dataFile_, line) )
-	{
-		stringstream str(line);
- 
-    getline(str, word, ',');
-
-    if( labelToIndx_.find(word) == labelToIndx_.end() ) // new label found
-      labelToIndx_.insert( make_pair(word, labelToIndx_.size()) );
-
-    int labelIndx = labelToIndx_[word];
-
-    vector<double> scanMeas;
-		while(getline(str, word, ','))
-			scanMeas.push_back( stod(word) );
-
-		trainingData_[labelIndx].push_back(scanMeas);
-	}
-} */
-
 
 // **********************************************************************************
 template <typename T>

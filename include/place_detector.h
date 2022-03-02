@@ -64,7 +64,7 @@ public:
 class place_detector
 {
 private:
-  enum MODE {RECORD_SCANS, REALTIME_PREDICTION, FEATURE_EXTRACTION, LABEL_SCANS, SVM_TRAINING, TEST, NONE};
+  enum MODE {RECORD_SCANS, REALTIME_PREDICTION, LABEL_SCANS, SVM_TRAINING, TEST, NONE};
 
   ros::NodeHandle* nh_;
 
@@ -84,7 +84,7 @@ private:
   double scanAngleMax_ = 0;
   double scanAngleInc_ = 0;
 
-  vector<float> scanR_; // ranges
+  vector<double> scanR_; // ranges
   vector<pair<double,double>> scanP_; // polygon, cartesian
 
   vector<double> featureVecA_;
@@ -102,10 +102,10 @@ private:
 
   int nFeatureVecsWritten_ = 0;
 
-  vector<vector<string>> rawScansIn_; // used for label scans mode
-  vector<vector<string>> labelledScansOut_; // used for label scans mode
-  vector<vector<string>> featuresOut_; // used for label scans mode
-  int scanLabelItr_ = -1; // iterator of the scan curently being shown
+  vector<vector<double>> rawScansIn_; // used for label_scans mode
+  vector<vector<double>> labelledScansOut_; // used for label_scans mode
+  vector<vector<double>> labelledFeaturesOut_; // used for label_scans mode
+  int rawScanItr_ = -1; // iterator of the scan curently being shown
   stack<string> labelActions_; // used for label scans mode
 
   const double pi_ = atan(1)*4;
@@ -117,8 +117,7 @@ public:
   bool is_valid(const MODE& mode);
   void label_cb(const std_msgs::String& labelMsg);
   void scan_cb(const sensor_msgs::LaserScan& scanMsg);
-  void scan_cb_feature_extraction_mode(const sensor_msgs::LaserScan& scanMsg);
-  void update_feature_vec_b();
+  vector<double> feature_vec_b(double& computeTime);
   double compactness(const double& area, const double& perimeter);
   double eccentricity(const double& area, const vector<double>& secondOrderCentralMoments);
   double roundness(const double& area, const double& convexPerimeter);
@@ -131,11 +130,10 @@ public:
   vector<double> seven_invariants(const pair<double,double>& cog, vector<double>& secondOrderCentralMoments);
   double p_q_th_order_central_moment(const int& p, const int& q, const pair<double,double>& cog);
   pair<double,double> area_perimeter_polygon(int& bottomPtIndx);
-  void update_feature_vec_a();
+  vector<double> feature_vec_a(double& computeTime);
   int n_gaps(const double& thresh);
-  pair<double, double> mean_sdev_range_diff(const float& thresh);
+  pair<double, double> mean_sdev_range_diff(const double& thresh);
   void test_function();
-  void write_feature_vecs_to_file();
   void ros_info(const string& s, double throttle = -1);
   void ros_warn(const string& s, double throttle = -1);
   void publish_convex_hull(const vector<pair<double,double>>& convHullPts, const int& bottomPtIndx);
@@ -147,8 +145,9 @@ public:
 
   void label_scans();
   void publish_raw_scan(const int& row);
-  vector<vector<string>> read_from_file();
-  void write_to_file(const vector<vector<string>>& contentIn);
+  vector<vector<double>> read_num_csv(const string& filePath);
+  void write_num_csv(const vector<vector<double>>& contentIn, const string& filePath);
+  bool append_labelled_data(const int& rawScanIndx, const string& label);
 };
 
 template <typename T> ostream& operator<<(ostream& os, const vector<T>& vecIn);
