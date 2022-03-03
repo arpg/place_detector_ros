@@ -7,7 +7,7 @@ int main(int argc, char** argv)
 	ros::init(argc, argv, "place_detector");
 	ros::NodeHandle nh(ros::this_node::getName());
 	
-	place_detector placeDetector(&nh);
+	place_detector_c placeDetector(&nh);
 	
 	ros::spin();
 

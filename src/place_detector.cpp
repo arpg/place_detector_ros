@@ -1,7 +1,7 @@
 #include "place_detector.h"
 
 // **********************************************************************************
-place_detector::place_detector(ros::NodeHandle* nh)
+place_detector_c::place_detector_c(ros::NodeHandle* nh)
 {
   nh_ = nh;
   load_params();
@@ -35,11 +35,11 @@ place_detector::place_detector(ros::NodeHandle* nh)
   {
     ros_info("Open RViz to visualize scans and publish labels");
     rawScansIn_ = read_num_csv(filePath_+"/raw_scans/dataset.csv");
-    labelSub_ = nh_->subscribe("label_in", 1, &place_detector::label_cb, this);
+    labelSrv_ = nh->advertiseService("label_in", &place_detector_c::label_cb, this);
     scanPub_ = nh->advertise<sensor_msgs::LaserScan>("scan_out", 1);
 
     ros_info("Congrats! All scans are labelled");
-    ros::shutdown();
+    //ros::shutdown();
     return;
   }
 
@@ -48,23 +48,23 @@ place_detector::place_detector(ros::NodeHandle* nh)
   if(mode_ = MODE::LABEL_SCANS)
     dataFile_.open(filePath_);
 
-  scanSub_ = nh_->subscribe("scan_in", 1, &place_detector::scan_cb, this);
+  scanSub_ = nh->subscribe("scan_in", 1, &place_detector_c::scan_cb, this);
   
-  labelPub_ = nh_->advertise<std_msgs::String>("label_out", 1);
-  convHullPub_ = nh_->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
+  labelPub_ = nh->advertise<std_msgs::String>("label_out", 1);
+  convHullPub_ = nh->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
 
   return;
 }
 
 // **********************************************************************************
-place_detector::~place_detector()
+place_detector_c::~place_detector_c()
 {
   if(dataFile_.is_open())
     dataFile_.close();
-  delete nh_;
+ // delete nh_;
 }
 // **********************************************************************************
-void place_detector::load_params()
+void place_detector_c::load_params()
 {
   ros_info("Waiting for params to load ...");
 
@@ -91,7 +91,7 @@ void place_detector::load_params()
 }
 
 // **********************************************************************************
-bool place_detector::is_valid(const MODE& mode)
+bool place_detector_c::is_valid(const MODE& mode)
 {
   if(mode_ == MODE::NONE)
     return false;
@@ -100,7 +100,7 @@ bool place_detector::is_valid(const MODE& mode)
 }
 
 // **********************************************************************************
-void place_detector::test_function()
+void place_detector_c::test_function()
 {
   ros_warn("TEST FUNCTION CALLED, COMMENT IT OUT IF PROCESSING REALTIME DATA");
   scanR_.resize(0);
@@ -123,7 +123,7 @@ void place_detector::test_function()
 }
 
 // **********************************************************************************
-vector<vector<double>> place_detector::read_num_csv(const string& filePath)
+vector<vector<double>> place_detector_c::read_num_csv(const string& filePath)
 {
   ifstream dataFile;
   dataFile.open(filePath);
@@ -149,7 +149,7 @@ vector<vector<double>> place_detector::read_num_csv(const string& filePath)
 }
 
 // **********************************************************************************
-void place_detector::write_num_csv(const vector<vector<double>>& contentIn, const string& filePath)
+void place_detector_c::write_num_csv(const vector<vector<double>>& contentIn, const string& filePath)
 {
   ofstream dataFile;
   dataFile.open(filePath);
@@ -172,23 +172,24 @@ void place_detector::write_num_csv(const vector<vector<double>>& contentIn, cons
 }
 
 // **********************************************************************************
-void place_detector::label_cb(const std_msgs::String& labelMsg)
+bool place_detector_c::label_cb(place_detector::PlaceLabel::Request& req, place_detector::PlaceLabel::Response& res)
 {
+  res.ok = true;
   // labels 'undo', 'skip', 'start' and 'done' are reserved for commands
 
   // Sanity checks
-  if(labelMsg.data == "done")
+  if(req.label == "done")
   {
     ros_info("Writing labelled scans to file");
     write_num_csv(labelledScansOut_, filePath_+"/labelled_scans/dataset.csv");
     write_num_csv(labelledFeaturesOut_, filePath_+"/labelled_features/dataset.csv");
     ros_info("Done writing, you may close the processes now");
-    return;
+    return true;
   }
   if(rawScansIn_.size() < 1)
   {
     ros_warn("Not enough scans to label");
-    return;
+    return true;
   }
   if(rawScanItr_ >= rawScansIn_.size()-1 )
     ros_warn("No scans left to label");
@@ -197,14 +198,21 @@ void place_detector::label_cb(const std_msgs::String& labelMsg)
   {
     publish_raw_scan(0);
     rawScanItr_ = 0;
-    return;
+    return true;
   }
 
   // Actions to perform
-  if(labelMsg.data == "undo" && !labelActions_.empty())
+  if(req.label == "undo" && !labelActions_.empty())
   {
+    // if all are processed and itr is at last element then keep itr there to show the last scan and pop action
+    // if "skipped" then dont pop labelled elements but pop action
     string lastAction = labelActions_.top();
-    if(lastAction == "skip")
+    if(labelActions_.size() == rawScansIn_.size())
+    {
+      labelledScansOut_.pop_back();
+      labelledFeaturesOut_.pop_back();
+    }    
+    else if(lastAction == "skip")
       rawScanItr_ = max(rawScanItr_-1, 0);
     else if(lastAction == "labelled")
     {
@@ -214,36 +222,37 @@ void place_detector::label_cb(const std_msgs::String& labelMsg)
     }
     labelActions_.pop();
   }
-  else if(labelMsg.data == "undo")
+  else if(req.label == "undo")
     ros_warn("Nothing to undo");
 
-  else if(labelMsg.data == "skip" && rawScanItr_ < rawScansIn_.size()-1)
+  else if(req.label == "skip" && rawScanItr_ < rawScansIn_.size()-1)
   {
     rawScanItr_++;
     labelActions_.push("skip");
   }
-  else if(labelMsg.data == "skip")
+  else if(req.label == "skip")
     ros_warn("Nothing to skip");
 
-  else // label
+  else if(rawScanItr_ < rawScansIn_.size()-1) // label
   {
-    bool success = append_labelled_data(rawScanItr_, labelMsg.data);
+    bool success = append_labelled_data(rawScanItr_, req.label);
 
     if(!success && rawScanItr_ < rawScansIn_.size()-1)
     {
       rawScanItr_++;
       labelActions_.push("skip");
     }
-    else if(success && rawScanItr_ < rawScansIn_.size()-1)
-
     rawScanItr_ = min(rawScanItr_+1, int(rawScansIn_.size()-1));
     if(success) {labelActions_.push("labelled");}
   }
+  else 
+    ros_warn("Nothing to label");
 	
   publish_raw_scan(rawScanItr_);  
+  return true;
 }
 // **********************************************************************************
-bool place_detector::append_labelled_data(const int& rawScanIndx, const string& label)
+bool place_detector_c::append_labelled_data(const int& rawScanIndx, const string& label)
 {
   map<string,int>::iterator itr = labelToIndx_.find(label);
   if( itr == labelToIndx_.end() )
@@ -283,7 +292,7 @@ bool place_detector::append_labelled_data(const int& rawScanIndx, const string& 
 }
 
 // **********************************************************************************
-void place_detector::publish_raw_scan(const int& row)
+void place_detector_c::publish_raw_scan(const int& row)
 {
   sensor_msgs::LaserScan scanOut;
   scanOut.header.stamp = ros::Time::now();
@@ -302,7 +311,7 @@ void place_detector::publish_raw_scan(const int& row)
 }
 
 // **********************************************************************************
-void place_detector::scan_cb(const sensor_msgs::LaserScan& scanMsg)
+void place_detector_c::scan_cb(const sensor_msgs::LaserScan& scanMsg)
 {
   if( scanMsg.ranges.size() < 5 )
     ros_warn("Not enough points in the laser scan", 1);
@@ -313,16 +322,16 @@ void place_detector::scan_cb(const sensor_msgs::LaserScan& scanMsg)
   {
     geometry_msgs::Pose robPose; // get_robot_pose();
 
-    dataFile << robPose.position.x << ", " robPose.position.y << ", " << robPose.position.z;
+    dataFile_ << robPose.position.x << ", " << robPose.position.y << ", " << robPose.position.z;
 
-    for(int i=0; i<scanMsg.data.size(); i++)
-      dataFile_ << ", " << to_string(scanMsg.data[i]);
+    for(int i=0; i<scanMsg.ranges.size(); i++)
+      dataFile_ << ", " << to_string(scanMsg.ranges[i]);
   }
     
 }
 
 // **********************************************************************************
-bool place_detector::fill_gaps_in_scan()
+bool place_detector_c::fill_gaps_in_scan()
 {
   if(scanR_.size() < 2)
     return false;
@@ -359,7 +368,7 @@ bool place_detector::fill_gaps_in_scan()
   return true;
 }
 // **********************************************************************************
-void place_detector::interp_scan(const int& indx1, const int& indx2, const vector<int>& midInds)
+void place_detector_c::interp_scan(const int& indx1, const int& indx2, const vector<int>& midInds)
 {
   const double delTheta = 1/double(midInds.size()+1);
 
@@ -374,7 +383,7 @@ void place_detector::interp_scan(const int& indx1, const int& indx2, const vecto
 }
 
 // **********************************************************************************
-vector<double> place_detector::feature_vec_b(double& computeTime)
+vector<double> place_detector_c::feature_vec_b(double& computeTime)
 {
   ros::Time startTime = ros::Time::now();
 
@@ -414,18 +423,20 @@ vector<double> place_detector::feature_vec_b(double& computeTime)
   
   publish_convex_hull(convHullPts, bottomPtIndx);
   computeTime = ( ros::Time::now() - startTime ).toSec();
+
+  return featureVecB;
 }
 
 // **********************************************************************************
 // the ratio of the area of an object to the area of a circle with the same perimeter
-double place_detector::compactness(const double& area, const double& perimeter)
+double place_detector_c::compactness(const double& area, const double& perimeter)
 {
   return (4*pi_*area) / (perimeter*perimeter);
 }
 
 // **********************************************************************************
 // https://docs.baslerweb.com/visualapplets/files/manuals/content/examples%20imagemoments.html
-double place_detector::eccentricity(const double& area, const vector<double>& secondOrderCentralMoments)
+double place_detector_c::eccentricity(const double& area, const vector<double>& secondOrderCentralMoments)
 {
   double mu_0_2 = secondOrderCentralMoments[0];
   double mu_2_0 = secondOrderCentralMoments[1];
@@ -440,7 +451,7 @@ double place_detector::eccentricity(const double& area, const vector<double>& se
 
 // **********************************************************************************
 // the ratio of the area of an object to the area of a circle with the same convex perimeter
-double place_detector::roundness(const double& area, const double& convexPerimeter)
+double place_detector_c::roundness(const double& area, const double& convexPerimeter)
 {
   if( abs(convexPerimeter) < 1e-6 )
     ros_warn("Convex perimeter zero");
@@ -448,7 +459,7 @@ double place_detector::roundness(const double& area, const double& convexPerimet
 }
 
 // **********************************************************************************
-void place_detector::swap(pair<double,double>& p1, pair<double,double>& p2)
+void place_detector_c::swap(pair<double,double>& p1, pair<double,double>& p2)
 {
   pair<double,double> temp = p1;
   p1 = p2;
@@ -457,7 +468,7 @@ void place_detector::swap(pair<double,double>& p1, pair<double,double>& p2)
  
 // **********************************************************************************
 // perimeter of the convex hull that encloses the object
-double place_detector::convex_perimeter(const vector<pair<double,double>>& convHullPts)
+double place_detector_c::convex_perimeter(const vector<pair<double,double>>& convHullPts)
 {
   double sum = 0;
   for(int i=0; i<convHullPts.size()-1; i++)
@@ -469,14 +480,14 @@ double place_detector::convex_perimeter(const vector<pair<double,double>>& convH
 }
 
 // **********************************************************************************
-double place_detector::dist(const pair<double, double>& pt1, const pair<double, double>& pt2)
+double place_detector_c::dist(const pair<double, double>& pt1, const pair<double, double>& pt2)
 {
   return sqrt( pow(pt2.first-pt1.first,2) + pow(pt2.second-pt1.second,2) );
 }
 
 // **********************************************************************************
 // https://www.geeksforgeeks.org/convex-hull-set-2-graham-scan/
-vector<pair<double,double>> place_detector::convex_hull_points(const int& bottomPtIndx)
+vector<pair<double,double>> place_detector_c::convex_hull_points(const int& bottomPtIndx)
 {
   if(scanP_.size() < 3)
     return scanP_;
@@ -530,7 +541,7 @@ vector<pair<double,double>> place_detector::convex_hull_points(const int& bottom
 
 // **********************************************************************************
 // the ratio between the area of the block and the area of the circumscribed circle
-double place_detector::form_factor(const double& area, const double& circumCircleArea)
+double place_detector_c::form_factor(const double& area, const double& circumCircleArea)
 {
   if( abs(circumCircleArea) < 1e-6)
     ros_warn("Circum circle area is zero");
@@ -538,7 +549,7 @@ double place_detector::form_factor(const double& area, const double& circumCircl
 }
 
 // **********************************************************************************
-double place_detector::circumscribed_circle_area(const pair<double,double>& cog)
+double place_detector_c::circumscribed_circle_area(const pair<double,double>& cog)
 {
   double maxDist = DBL_MIN;
 
@@ -554,7 +565,7 @@ double place_detector::circumscribed_circle_area(const pair<double,double>& cog)
 }
 
 // **********************************************************************************
-pair<double, double> place_detector::cog()
+pair<double, double> place_detector_c::cog()
 {
   double cogX = 0, cogY = 0;
 
@@ -576,7 +587,7 @@ pair<double, double> place_detector::cog()
 // **********************************************************************************
 // Correct One => https://www.mathworks.com/matlabcentral/fileexchange/33975-the-seven-invariant-moments
 // https://towardsdatascience.com/introduction-to-the-invariant-moment-and-its-application-to-the-feature-extraction-ee991f39ec
-vector<double> place_detector::seven_invariants(const pair<double,double>& cogVal, vector<double>& secondOrderCentralMoments)
+vector<double> place_detector_c::seven_invariants(const pair<double,double>& cogVal, vector<double>& secondOrderCentralMoments)
 {
   const double mu_0_0 = p_q_th_order_central_moment(0,0, cogVal);//p_q_th_order_central_moment(0,0, cog);
 
@@ -633,7 +644,7 @@ vector<double> place_detector::seven_invariants(const pair<double,double>& cogVa
 }
 
 // **********************************************************************************
-double place_detector::p_q_th_order_central_moment(const int& p, const int& q, const pair<double,double>& cog)
+double place_detector_c::p_q_th_order_central_moment(const int& p, const int& q, const pair<double,double>& cog)
 {
   double sum = 0.0;
   for( int i=0; i<scanP_.size(); i++ )
@@ -647,7 +658,7 @@ double place_detector::p_q_th_order_central_moment(const int& p, const int& q, c
 }
 
 // **********************************************************************************
-pair<double,double> place_detector::area_perimeter_polygon(int& bottomPtIndx)
+pair<double,double> place_detector_c::area_perimeter_polygon(int& bottomPtIndx)
 {
   pair<double,double> result;
   scanP_.resize(0);
@@ -704,7 +715,7 @@ pair<double,double> place_detector::area_perimeter_polygon(int& bottomPtIndx)
 }
 
 // **********************************************************************************
-vector<double> place_detector::feature_vec_a(double& computeTime)
+vector<double> place_detector_c::feature_vec_a(double& computeTime)
 {
   ros::Time startTime = ros::Time::now();
 
@@ -757,7 +768,7 @@ vector<double> place_detector::feature_vec_a(double& computeTime)
 }
 
 // **********************************************************************************
-int place_detector::n_gaps(const double& thresh)
+int place_detector_c::n_gaps(const double& thresh)
 {
   int nGaps = 0;
   if( abs(scanR_[0] - scanR_.back()) > thresh )
@@ -770,7 +781,7 @@ int place_detector::n_gaps(const double& thresh)
 }
 
 // **********************************************************************************
-pair<double, double> place_detector::mean_sdev_range_diff(const double& thresh)
+pair<double, double> place_detector_c::mean_sdev_range_diff(const double& thresh)
 {
   vector<double> lenDiff;
   lenDiff.push_back( abs( min(scanR_[0], thresh) - min(scanR_.back(), thresh) ) );
@@ -789,7 +800,7 @@ pair<double, double> place_detector::mean_sdev_range_diff(const double& thresh)
 }
 
 // **********************************************************************************
-void place_detector::train_svm()
+void place_detector_c::train_svm()
 {
   cv::String fileName(filePath_);
   int headerLineCount = 0; 
@@ -834,7 +845,7 @@ void place_detector::train_svm()
 }
 
 // **********************************************************************************
-void place_detector::print_label_counts_svm(const cv::Mat& reponsesMat)
+void place_detector_c::print_label_counts_svm(const cv::Mat& reponsesMat)
 {
   map<int, int> indxToCount;
   for(int i=0; i<reponsesMat.rows; i++)
@@ -859,7 +870,7 @@ void place_detector::print_label_counts_svm(const cv::Mat& reponsesMat)
 }
 
 // **********************************************************************************
-void place_detector::publish_convex_hull(const vector<pair<double,double>>& convHullPts, const int& bottomPtIndx)
+void place_detector_c::publish_convex_hull(const vector<pair<double,double>>& convHullPts, const int& bottomPtIndx)
 {
   visualization_msgs::MarkerArray markerArr;
 
@@ -971,7 +982,7 @@ ostream& operator<<(ostream& os, const pair<T1,T2>& pairIn)
 }
 
 // **********************************************************************************
-void place_detector::ros_info(const string& s, double throttle_s)
+void place_detector_c::ros_info(const string& s, double throttle_s)
 {
   if(throttle_s < 0.0)
 	  ROS_INFO("%s: %s", nh_->getNamespace().c_str(), s.c_str());	
@@ -980,7 +991,7 @@ void place_detector::ros_info(const string& s, double throttle_s)
 }
 
 // **********************************************************************************
-void place_detector::ros_warn(const string& s, double throttle_s)
+void place_detector_c::ros_warn(const string& s, double throttle_s)
 {
   if(throttle_s < 0.0)
 	  ROS_WARN("%s: %s", nh_->getNamespace().c_str(), s.c_str());		

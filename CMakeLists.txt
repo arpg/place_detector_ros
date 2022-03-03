@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  message_generation
 )
 
 find_package(OpenCV REQUIRED)
@@ -63,6 +64,10 @@ find_package(OpenCV REQUIRED)
 #   Service1.srv
 #   Service2.srv
 # )
+add_service_files(
+   FILES
+   PlaceLabel.srv
+ )
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -72,8 +77,10 @@ find_package(OpenCV REQUIRED)
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
+ generate_messages(
+   DEPENDENCIES
+   std_msgs
+  )
 #   geometry_msgs#   nav_msgs#   std_msgs
 # )
 
@@ -132,6 +139,7 @@ include_directories(
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
  add_dependencies(place_detector ${catkin_EXPORTED_TARGETS})
+ add_dependencies(place_detector place_detector_generate_messages_cpp)
 
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context

@@ -1,7 +1,7 @@
 <launch>
 
 <node name="place_detector" type="place_detector_node" pkg="place_detector" output="screen">
-  <param name="data_label_mode" value="true"/>
+  <param name="mode" value="label_scans"/>
   <param name="file_path" value="/home/shakeeb/scan_label.txt"/>
 </node>
 

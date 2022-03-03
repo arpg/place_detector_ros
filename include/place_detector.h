@@ -1,3 +1,6 @@
+#ifndef PLACEDETECTOR_H
+#define PLACEDETECTOR_H
+
 #include "ros/ros.h"
 #include "sensor_msgs/LaserScan.h"
 #include "std_msgs/String.h"
@@ -6,6 +9,7 @@
 #include "geometry_msgs/Point.h"
 #include "std_msgs/ColorRGBA.h"
 #include "sensor_msgs/LaserScan.h"
+#include "place_detector/PlaceLabel.h"
 
 #include <fstream>
 #include <numeric>
@@ -61,7 +65,7 @@ public:
 };
 
 // **********************************************************************************
-class place_detector
+class place_detector_c
 {
 private:
   enum MODE {RECORD_SCANS, REALTIME_PREDICTION, LABEL_SCANS, SVM_TRAINING, TEST, NONE};
@@ -69,10 +73,11 @@ private:
   ros::NodeHandle* nh_;
 
   ros::Subscriber scanSub_;
-  ros::Subscriber labelSub_;
   ros::Publisher labelPub_;
   ros::Publisher convHullPub_;
+
   ros::Publisher scanPub_;
+  ros::ServiceServer labelSrv_;
 
   MODE mode_ = MODE::NONE;
 
@@ -111,11 +116,11 @@ private:
   const double pi_ = atan(1)*4;
 
 public:
-  place_detector(ros::NodeHandle* nh);
-  ~place_detector();
+  place_detector_c(ros::NodeHandle* nh);
+  ~place_detector_c();
   void load_params();
   bool is_valid(const MODE& mode);
-  void label_cb(const std_msgs::String& labelMsg);
+  bool label_cb(place_detector::PlaceLabel::Request& req, place_detector::PlaceLabel::Response& res);
   void scan_cb(const sensor_msgs::LaserScan& scanMsg);
   vector<double> feature_vec_b(double& computeTime);
   double compactness(const double& area, const double& perimeter);
@@ -153,3 +158,5 @@ public:
 template <typename T> ostream& operator<<(ostream& os, const vector<T>& vecIn);
 template <typename T1, typename T2> ostream& operator<<(ostream& os, const vector<pair<T1,T2>>& vecIn);
 template <typename T1, typename T2> ostream& operator<<(ostream& os, const pair<T1,T2>& pairIn);
+
+#endif
