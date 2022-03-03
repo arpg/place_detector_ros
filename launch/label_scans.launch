@@ -1,0 +1,17 @@
+<launch>
+
+<arg name = "mode" default = "label_scans"/>
+<arg name = "file_path" default = "$(find place_detector)/data"/>
+<arg name = "rviz_config" default = "$(find place_detector)/rviz/label_scans.rviz"/>
+<arg name = "rqt_config" default = "$(find place_detector)/rqt/label_gui.perspective"/>
+
+<node name="place_detector" type="place_detector_node" pkg="place_detector" output="screen">
+  <param name="mode" value="$(arg mode)"/>
+  <param name="file_path" value="$(arg file_path)"/>
+</node>
+
+<node name = "rqt_dashboard" pkg = "rqt_gui" type = "rqt_gui" respawn = "false" output = "screen" args = "--perspective-file $(arg rqt_config)"/>
+
+<node pkg="rviz" type="rviz" name="place_detector_ui" output="screen" args="-d $(arg rviz_config)"/>
+
+</launch>

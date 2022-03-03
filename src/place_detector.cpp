@@ -31,7 +31,7 @@ place_detector_c::place_detector_c(ros::NodeHandle* nh)
     ros::shutdown();
     return;
   }
-  else if(mode_ = MODE::LABEL_SCANS)
+  else if(mode_ == MODE::LABEL_SCANS)
   {
     ros_info("Open RViz to visualize scans and publish labels");
     rawScansIn_ = read_num_csv(filePath_+"/raw_scans/dataset.csv");
@@ -45,8 +45,8 @@ place_detector_c::place_detector_c(ros::NodeHandle* nh)
 
   // continue for online modes
   ros_info("Continuing ...");
-  if(mode_ = MODE::LABEL_SCANS)
-    dataFile_.open(filePath_);
+  if(mode_ == MODE::RECORD_SCANS)
+    dataFile_.open(filePath_+"/raw_scans/dataset.csv");
 
   scanSub_ = nh->subscribe("scan_in", 1, &place_detector_c::scan_cb, this);
   
@@ -191,8 +191,8 @@ bool place_detector_c::label_cb(place_detector::PlaceLabel::Request& req, place_
     ros_warn("Not enough scans to label");
     return true;
   }
-  if(rawScanItr_ >= rawScansIn_.size()-1 )
-    ros_warn("No scans left to label");
+  //if(rawScanItr_ >= rawScansIn_.size()-1 )
+  //  ros_warn("No scans left to label");
   
   if(rawScanItr_ < 0)
   {
@@ -265,7 +265,7 @@ bool place_detector_c::append_labelled_data(const int& rawScanIndx, const string
   labelledScan.push_back( itr->second );
   featureVec.push_back( itr->second );
 
-  scanR_ = vector<double>(rawScansIn_[rawScanIndx].begin()+3, rawScansIn_[rawScanIndx].end());
+  scanR_ = vector<double>(rawScansIn_[rawScanIndx].begin()+4, rawScansIn_[rawScanIndx].end());
   labelledScan.insert(labelledScan.end(), rawScansIn_[rawScanIndx].begin(), rawScansIn_[rawScanIndx].end());
 
   if(scanR_.size() < 5 || !fill_gaps_in_scan())
@@ -285,7 +285,7 @@ bool place_detector_c::append_labelled_data(const int& rawScanIndx, const string
   labelledFeaturesOut_.push_back(featureVec);
 
   ros_info( to_string(rawScanIndx) + ": Calculated feature vector of size " + 
-  to_string(featureVecA.size()) + " + " + to_string(featureVecB.size()) + " = " + to_string(featureVecA.size() + featureVecB_.size()) + 
+  to_string(featureVecA.size()) + " + " + to_string(featureVecB.size()) + " = " + to_string(featureVecA.size() + featureVecB.size()) + 
   " in " + to_string(computeTimeA*1e3 + computeTimeB*1e3) + " ms" );
 
   return true;
@@ -322,7 +322,13 @@ void place_detector_c::scan_cb(const sensor_msgs::LaserScan& scanMsg)
   {
     geometry_msgs::Pose robPose; // get_robot_pose();
 
-    dataFile_ << robPose.position.x << ", " << robPose.position.y << ", " << robPose.position.z;
+    tf2::Quaternion tfRot;
+    fromMsg(robPose.orientation, tfRot);
+    
+    double roll, pitch, yaw;
+    tf2::Matrix3x3(tfRot).getRPY(roll, pitch, yaw);
+
+    dataFile_ << robPose.position.x << ", " << robPose.position.y << ", " << robPose.position.z << ", " << yaw;
 
     for(int i=0; i<scanMsg.ranges.size(); i++)
       dataFile_ << ", " << to_string(scanMsg.ranges[i]);

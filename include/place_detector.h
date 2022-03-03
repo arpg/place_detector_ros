@@ -10,6 +10,7 @@
 #include "std_msgs/ColorRGBA.h"
 #include "sensor_msgs/LaserScan.h"
 #include "place_detector/PlaceLabel.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 
 #include <fstream>
 #include <numeric>
@@ -92,20 +93,9 @@ private:
   vector<double> scanR_; // ranges
   vector<pair<double,double>> scanP_; // polygon, cartesian
 
-  vector<double> featureVecA_;
-  vector<double> featureVecB_;
-
-  double featureVecAComputeTime_ = 0.0;
-  double featureVecBComputeTime_ = 0.0;
-
-  string mostRecentLabel_ = "";
-  ros::Time mostRecentLabelTime_;
-
   string scanFrameId_ = "";
 
   string filePath_ = ""; // file path to write feature set to
-
-  int nFeatureVecsWritten_ = 0;
 
   vector<vector<double>> rawScansIn_; // used for label_scans mode
   vector<vector<double>> labelledScansOut_; // used for label_scans mode
