@@ -1,0 +1,10 @@
+
+<library path="lib/libplace_detector_ui">
+  <class name="place_detector_ui/PlaceDetector_Control"
+         type="place_detector_ui"
+         base_class_type="rviz::Panel">
+    <description>
+      A panel widget for control of place_detector.
+    </description>
+  </class>
+</library>
