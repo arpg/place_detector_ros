@@ -3,11 +3,15 @@
 <arg name = "mode" default = "record_scans"/>
 <arg name = "file_path" default = "$(find place_detector)/data"/>
 <arg name = "rviz_config" default = "$(find place_detector)/rviz/record_scans.rviz"/>
-<arg name = "bag_file_path" default = "/home/shakeeb/Downloads/D02_ouster_imu_2021-09-27-12-06-12_0.bag"/>
+<arg name = "bag_file_path" default = "/home/shakeeb/Downloads/D02_ouster_imu_2021-09-27-12-34-02_1.bag"/>
+
+<arg name = "angle_min" value = "-3.141592653589793238" doc="negative 180 degrees"/>
+<arg name = "angle_inc" value = "$(eval 3.141592653589793238/180)" doc="1 degree resolution"/>
+<arg name = "angle_max" value = "$(eval 3.141592653589793238 - 3.141592653589793238/180)" doc="180 degrees minus increment"/>
 
 <arg name = "M_PI" value = "3.141592653589793238"/>
 <arg name = "M_PI_NEG" value = "-3.141592653589793238"/>
-<arg name = "M_PI_360" value = "$(eval 3.141592653589793238/360)"/>
+<arg name = "2_M_PI_360" value = "$(eval 2*3.141592653589793238/360)"/>
 
 <param name = "use_sim_time" value = "true"/>
 
@@ -22,16 +26,16 @@
   <remap from = "scan" to = "/place_detector/scan_in"/>
   <remap from = "cloud_in" to = "/place_detector/ptcloud_in"/>
 
-  <param name="angle_min" value = "$(arg M_PI_NEG)"/>
-  <param name="angle_max" value = "$(arg M_PI)"/>
-	<param name="angle_increment" value = "$(arg M_PI_360)"/>
-  <param name="range_min" value = "0.20"/>
+  <param name="angle_min" value = "$(arg angle_min)"/>
+  <param name="angle_max" value = "$(eval angle_max)"/>
+	<param name="angle_increment" value = "$(arg angle_inc)"/>
+  <param name="range_min" value = "0.15"/>
   <param name="range_max" value = "100"/>
   <param name="use_inf" value = "true"/>
 </node>
 
 <node pkg="rviz" type="rviz" name="place_detector_ui" output="screen" args="-d $(arg rviz_config)"/>
 
-<node pkg="rosbag" type="play" name="rosbag_play" output="screen" args="--clock $(arg bag_file_path) --pause -r 5 -l"/>
+<node pkg="rosbag" type="play" name="rosbag_play" output="screen" args="--clock $(arg bag_file_path) --pause -r 1 -l"/>
 
 </launch>

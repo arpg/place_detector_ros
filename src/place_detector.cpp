@@ -201,6 +201,8 @@ bool place_detector_c::label_cb(place_detector::PlaceLabel::Request& req, place_
     return true;
   }
 
+  cout << "rawScansIn_.size(): " << rawScansIn_.size() << endl;
+  cout << "labelActions_.size(): " << labelActions_.size() << endl;
   // Actions to perform
   if(req.label == "undo" && !labelActions_.empty())
   {
@@ -233,7 +235,7 @@ bool place_detector_c::label_cb(place_detector::PlaceLabel::Request& req, place_
   else if(req.label == "skip")
     ros_warn("Nothing to skip");
 
-  else if(rawScanItr_ < rawScansIn_.size()-1) // label
+  else if(rawScanItr_ <= rawScansIn_.size()-1 && labelActions_.size() < rawScansIn_.size()) // label
   {
     bool success = append_labelled_data(rawScanItr_, req.label);
 
@@ -242,8 +244,13 @@ bool place_detector_c::label_cb(place_detector::PlaceLabel::Request& req, place_
       rawScanItr_++;
       labelActions_.push("skip");
     }
-    rawScanItr_ = min(rawScanItr_+1, int(rawScansIn_.size()-1));
-    if(success) {labelActions_.push("labelled");}
+    //else if(!success)
+    //  rawScanItr_ = min(rawScanItr_+1, int(rawScansIn_.size()-1));
+    if(success) 
+    {
+      rawScanItr_ = min(rawScanItr_+1, int(rawScansIn_.size()-1));
+      labelActions_.push("labelled");
+    }
   }
   else 
     ros_warn("Nothing to label");
@@ -296,9 +303,10 @@ void place_detector_c::publish_raw_scan(const int& row)
 {
   sensor_msgs::LaserScan scanOut;
   scanOut.header.stamp = ros::Time::now();
-  scanOut.header.frame_id = scanFrameId_; // TODO: set this in params
+  scanOut.header.frame_id = "world"; // TODO: set this in params
+  scanOut.angle_increment = double(2*pi_)/double(rawScansIn_[row].size()+1);
   scanOut.angle_min = -pi_;
-  scanOut.angle_increment = 360/(rawScansIn_[row].size()+1);
+  scanOut.angle_max = pi_ - scanOut.angle_increment;
   scanOut.range_min = 0;
   scanOut.range_max = FLT_MAX;
 
@@ -332,6 +340,8 @@ void place_detector_c::scan_cb(const sensor_msgs::LaserScan& scanMsg)
 
     for(int i=0; i<scanMsg.ranges.size(); i++)
       dataFile_ << ", " << to_string(scanMsg.ranges[i]);
+
+    dataFile_ << endl;
   }
     
 }
