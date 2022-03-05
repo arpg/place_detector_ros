@@ -37,6 +37,7 @@ place_detector_c::place_detector_c(ros::NodeHandle* nh)
     rawScansIn_ = read_num_csv(filePath_+"/raw_scans/dataset.csv");
     labelSrv_ = nh->advertiseService("label_in", &place_detector_c::label_cb, this);
     scanPub_ = nh->advertise<sensor_msgs::LaserScan>("scan_out", 1);
+    convHullPub_ = nh->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
 
     ros_info("Congrats! All scans are labelled");
     //ros::shutdown();
@@ -46,7 +47,10 @@ place_detector_c::place_detector_c(ros::NodeHandle* nh)
   // continue for online modes
   ros_info("Continuing ...");
   if(mode_ == MODE::RECORD_SCANS)
+  {
+    tfListenerPtr_ = new tf2_ros::TransformListener(tfBuffer_);
     dataFile_.open(filePath_+"/raw_scans/dataset.csv");
+  }
 
   scanSub_ = nh->subscribe("scan_in", 1, &place_detector_c::scan_cb, this);
   
@@ -61,6 +65,7 @@ place_detector_c::~place_detector_c()
 {
   if(dataFile_.is_open())
     dataFile_.close();
+  delete tfListenerPtr_; 
  // delete nh_;
 }
 // **********************************************************************************
@@ -83,6 +88,18 @@ void place_detector_c::load_params()
       mode_ = MODE::REALTIME_PREDICTION;
     else if( mode == "test" )
       mode_ = MODE::TEST;
+  }
+
+  if(mode_ == MODE::RECORD_SCANS)
+  {
+    bool usePose = false;
+    while(!nh_->getParam("use_pose", usePose));
+    if(usePose)
+    {
+      while(!nh_->getParam("world_frame_id", worldFrameId_));
+      while(!nh_->getParam("base_frame_id", baseFrameId_));
+      while(!update_rob_pose());
+    }
   }
 
   while(!nh_->getParam("file_path", filePath_));
@@ -172,6 +189,33 @@ void place_detector_c::write_num_csv(const vector<vector<double>>& contentIn, co
 }
 
 // **********************************************************************************
+bool place_detector_c::update_rob_pose()
+{
+  if(worldFrameId_ == "" && baseFrameId_ == "")
+  {
+    robPose_.orientation.w = 1;
+    return true;
+  }
+  geometry_msgs::TransformStamped baseToWorld;
+  try
+  {
+    baseToWorld = tfBuffer_.lookupTransform(worldFrameId_, baseFrameId_, ros::Time(0));
+
+    robPose_.orientation = baseToWorld.transform.rotation;
+    robPose_.position.x = baseToWorld.transform.translation.x;
+    robPose_.position.y = baseToWorld.transform.translation.y;
+    robPose_.position.z = baseToWorld.transform.translation.z;
+
+    return true;
+  }
+  catch(tf2::TransformException &ex)
+	{
+		ROS_WARN("%s",ex.what());
+    return false;
+	}
+}
+
+// **********************************************************************************
 bool place_detector_c::label_cb(place_detector::PlaceLabel::Request& req, place_detector::PlaceLabel::Response& res)
 {
   res.ok = true;
@@ -201,8 +245,8 @@ bool place_detector_c::label_cb(place_detector::PlaceLabel::Request& req, place_
     return true;
   }
 
-  cout << "rawScansIn_.size(): " << rawScansIn_.size() << endl;
-  cout << "labelActions_.size(): " << labelActions_.size() << endl;
+  //cout << "rawScansIn_.size(): " << rawScansIn_.size() << endl;
+  //cout << "labelActions_.size(): " << labelActions_.size() << endl;
   // Actions to perform
   if(req.label == "undo" && !labelActions_.empty())
   {
@@ -272,7 +316,7 @@ bool place_detector_c::append_labelled_data(const int& rawScanIndx, const string
   labelledScan.push_back( itr->second );
   featureVec.push_back( itr->second );
 
-  scanR_ = vector<double>(rawScansIn_[rawScanIndx].begin()+4, rawScansIn_[rawScanIndx].end());
+  scanR_ = vector<double>(rawScansIn_[rawScanIndx].begin()+3, rawScansIn_[rawScanIndx].end());
   labelledScan.insert(labelledScan.end(), rawScansIn_[rawScanIndx].begin(), rawScansIn_[rawScanIndx].end());
 
   if(scanR_.size() < 5 || !fill_gaps_in_scan())
@@ -328,15 +372,15 @@ void place_detector_c::scan_cb(const sensor_msgs::LaserScan& scanMsg)
   
   if(mode_ == MODE::RECORD_SCANS)
   {
-    geometry_msgs::Pose robPose; // get_robot_pose();
+    update_rob_pose();
 
     tf2::Quaternion tfRot;
-    fromMsg(robPose.orientation, tfRot);
+    fromMsg(robPose_.orientation, tfRot);
     
     double roll, pitch, yaw;
     tf2::Matrix3x3(tfRot).getRPY(roll, pitch, yaw);
 
-    dataFile_ << robPose.position.x << ", " << robPose.position.y << ", " << robPose.position.z << ", " << yaw;
+    dataFile_ << robPose_.position.x << ", " << robPose_.position.y << ", " << yaw;
 
     for(int i=0; i<scanMsg.ranges.size(); i++)
       dataFile_ << ", " << to_string(scanMsg.ranges[i]);

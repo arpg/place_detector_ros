@@ -11,6 +11,8 @@
 #include "sensor_msgs/LaserScan.h"
 #include "place_detector/PlaceLabel.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "geometry_msgs/TransformStamped.h"
+#include "tf2_ros/transform_listener.h"
 
 #include <fstream>
 #include <numeric>
@@ -105,6 +107,12 @@ private:
 
   const double pi_ = atan(1)*4;
 
+  geometry_msgs::Pose robPose_; // used for record_scans mode
+  string worldFrameId_ = ""; // used for record_scans mode
+  string baseFrameId_ = ""; // used for record_scans mode
+  tf2_ros::Buffer tfBuffer_; // used for record_scans mode
+  tf2_ros::TransformListener* tfListenerPtr_; // used for record_scans mode
+
 public:
   place_detector_c(ros::NodeHandle* nh);
   ~place_detector_c();
@@ -143,6 +151,8 @@ public:
   vector<vector<double>> read_num_csv(const string& filePath);
   void write_num_csv(const vector<vector<double>>& contentIn, const string& filePath);
   bool append_labelled_data(const int& rawScanIndx, const string& label);
+
+  bool update_rob_pose();
 };
 
 template <typename T> ostream& operator<<(ostream& os, const vector<T>& vecIn);
