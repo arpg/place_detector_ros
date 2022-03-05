@@ -1,7 +1,7 @@
 <launch>
 
 <arg name = "mode" default = "svm_training"/>
-<arg name = "file_path" default = "$(find place_detector)/data/dataset.csv"/>
+<arg name = "file_path" default = "$(find place_detector)/data"/>
 
 <node name="place_detector" type="place_detector_node" pkg="place_detector" output="screen">
   <param name="mode" value="$(arg mode)"/>

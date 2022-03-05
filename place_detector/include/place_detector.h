@@ -88,14 +88,10 @@ private:
   map<string, int> labelToIndx_;
   map<int, string> indxToLabel_;
 
-  double scanAngleMin_ = 0;
-  double scanAngleMax_ = 0;
-  double scanAngleInc_ = 0;
-
   vector<double> scanR_; // ranges
   vector<pair<double,double>> scanP_; // polygon, cartesian
 
-  string scanFrameId_ = "";
+  string scanFrameId_ = "world";
 
   string filePath_ = ""; // file path to write feature set to
 
@@ -139,12 +135,14 @@ public:
   void test_function();
   void ros_info(const string& s, double throttle = -1);
   void ros_warn(const string& s, double throttle = -1);
+  void ros_error(const string& s, double throttle = -1);
   void publish_convex_hull(const vector<pair<double,double>>& convHullPts, const int& bottomPtIndx);
   bool fill_gaps_in_scan();
   void interp_scan(const int& indx1, const int& indx2, const vector<int>& midInds);
   void swap(pair<double,double>& p1, pair<double,double>& p2);
   void train_svm();
   void print_label_counts_svm(const cv::Mat& reponsesMat);
+  void print_conf_mat(const vector<vector<int>>& confMat);
 
   void label_scans();
   void publish_raw_scan(const int& row);

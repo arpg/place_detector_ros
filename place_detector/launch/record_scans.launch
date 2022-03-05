@@ -3,7 +3,7 @@
 <arg name = "mode" default = "record_scans"/>
 <arg name = "file_path" default = "$(find place_detector)/data"/>
 <arg name = "rviz_config" default = "$(find place_detector)/rviz/record_scans.rviz"/>
-<arg name = "bag_file_path" default = "/home/shakeeb/Downloads/D02_ouster_imu_2021-09-27-12-06-12_0.bag"/>
+<arg name = "bag_file_path" default = "/home/shakeeb/Downloads/D02_ouster_imu_2021-09-27-12-34-02_1.bag"/>
 
 <arg name = "angle_min" value = "-3.141592653589793238" doc="negative 180 degrees"/>
 <arg name = "angle_inc" value = "$(eval 3.141592653589793238/180)" doc="1 degree resolution"/>

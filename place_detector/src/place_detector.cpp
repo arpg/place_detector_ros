@@ -6,11 +6,14 @@ place_detector_c::place_detector_c(ros::NodeHandle* nh)
   nh_ = nh;
   load_params();
 
+  // Confusion matrix expect them in sequence starting from 0
+  indxToLabel_.insert( make_pair(0, "nothing") );
   indxToLabel_.insert( make_pair(1, "corridor") );
   indxToLabel_.insert( make_pair(2, "room") );
   indxToLabel_.insert( make_pair(3, "junction") );
   indxToLabel_.insert( make_pair(4, "bend") );
 
+  labelToIndx_.insert( make_pair("nothing", 0) );
   labelToIndx_.insert( make_pair("corridor", 1) );
   labelToIndx_.insert( make_pair("room", 2) );
   labelToIndx_.insert( make_pair("junction", 3) );
@@ -28,7 +31,7 @@ place_detector_c::place_detector_c(ros::NodeHandle* nh)
     ros_info("Training SVM ...");
     train_svm();
     ros_info("Training complete");
-    ros::shutdown();
+    //ros::shutdown();
     return;
   }
   else if(mode_ == MODE::LABEL_SCANS)
@@ -39,23 +42,28 @@ place_detector_c::place_detector_c(ros::NodeHandle* nh)
     scanPub_ = nh->advertise<sensor_msgs::LaserScan>("scan_out", 1);
     convHullPub_ = nh->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
 
-    ros_info("Congrats! All scans are labelled");
+    //ros_info("Congrats! All scans are labelled");
     //ros::shutdown();
     return;
   }
-
   // continue for online modes
-  ros_info("Continuing ...");
-  if(mode_ == MODE::RECORD_SCANS)
+  else if(mode_ == MODE::RECORD_SCANS)
   {
     tfListenerPtr_ = new tf2_ros::TransformListener(tfBuffer_);
+    scanSub_ = nh->subscribe("scan_in", 1, &place_detector_c::scan_cb, this);
+    convHullPub_ = nh->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
+
     dataFile_.open(filePath_+"/raw_scans/dataset.csv");
   }
+  else if(mode_ == MODE::REALTIME_PREDICTION)
+  {
+    scanSub_ = nh->subscribe("scan_in", 1, &place_detector_c::scan_cb, this);
+    labelPub_ = nh->advertise<std_msgs::String>("label_out", 1);
 
-  scanSub_ = nh->subscribe("scan_in", 1, &place_detector_c::scan_cb, this);
-  
-  labelPub_ = nh->advertise<std_msgs::String>("label_out", 1);
-  convHullPub_ = nh->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
+    convHullPub_ = nh->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
+  }
+  else
+    ros_error("Invalid mode");
 
   return;
 }
@@ -130,9 +138,9 @@ void place_detector_c::test_function()
   scanR_.push_back(NAN);
   scanR_.push_back(NAN);
 
-  scanAngleMin_ = 0;
-  scanAngleMax_ = 0 + pi_/4*7;
-  scanAngleInc_ = pi_/4;
+  //scanAngleMin_ = 0;
+  //scanAngleMax_ = 0 + pi_/4*7;
+  //scanAngleInc_ = pi_/4;
 
   fill_gaps_in_scan();
   cout << scanR_ << endl;
@@ -347,7 +355,7 @@ void place_detector_c::publish_raw_scan(const int& row)
 {
   sensor_msgs::LaserScan scanOut;
   scanOut.header.stamp = ros::Time::now();
-  scanOut.header.frame_id = "world"; // TODO: set this in params
+  scanOut.header.frame_id = scanFrameId_; // TODO: set this in params
   scanOut.angle_increment = double(2*pi_)/double(rawScansIn_[row].size()+1);
   scanOut.angle_min = -pi_;
   scanOut.angle_max = pi_ - scanOut.angle_increment;
@@ -727,7 +735,10 @@ pair<double,double> place_detector_c::area_perimeter_polygon(int& bottomPtIndx)
 
   double theta, thetaNxt, xCoord, yCoord, xCoordNxt, yCoordNxt;
 
-  thetaNxt = scanAngleMin_;
+  double scanAngleMin = -pi_;
+  double scanAngleInc = (2*pi_)/scanR_.size();
+
+  thetaNxt = scanAngleMin;
   xCoordNxt = scanR_[0]*cos(thetaNxt);
   yCoordNxt = scanR_[0]*sin(thetaNxt);
 
@@ -740,7 +751,7 @@ pair<double,double> place_detector_c::area_perimeter_polygon(int& bottomPtIndx)
     xCoord = xCoordNxt;
     yCoord = yCoordNxt;
 
-    thetaNxt = scanAngleMin_ + scanAngleInc_ * (i+1);
+    thetaNxt = scanAngleMin + scanAngleInc * (i+1);
     xCoordNxt = scanR_[i+1]*cos(thetaNxt);
     yCoordNxt = scanR_[i+1]*sin(thetaNxt);
 
@@ -760,7 +771,7 @@ pair<double,double> place_detector_c::area_perimeter_polygon(int& bottomPtIndx)
   xCoord = xCoordNxt;
   yCoord = yCoordNxt;
 
-  thetaNxt = scanAngleMin_;
+  thetaNxt = scanAngleMin;
   xCoordNxt = scanR_[0]*cos(thetaNxt);
   yCoordNxt = scanR_[0]*sin(thetaNxt);
 
@@ -862,7 +873,7 @@ pair<double, double> place_detector_c::mean_sdev_range_diff(const double& thresh
 // **********************************************************************************
 void place_detector_c::train_svm()
 {
-  cv::String fileName(filePath_);
+  cv::String fileName(filePath_+"/labelled_features/dataset.csv");
   int headerLineCount = 0; 
   int responseStartIdx = 0; int responseEndIdx = 1;
   char delimiter = ','; char missch = '?';
@@ -870,7 +881,7 @@ void place_detector_c::train_svm()
   
   cv::Ptr<cv::ml::TrainData> dataSet =  cv::ml::TrainData::loadFromCSV(fileName, headerLineCount, responseStartIdx, responseEndIdx, varTypeSpec, delimiter, missch);
 	
-  double trainToTestRatio = 0.90; bool shuffle = true;
+  double trainToTestRatio = 0.85; bool shuffle = true;
   dataSet->setTrainTestSplitRatio(trainToTestRatio, shuffle); 	   
 
   cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
@@ -885,12 +896,12 @@ void place_detector_c::train_svm()
   else
     ros_warn("Training failed");
 
-  cout << endl << "<=========== Training labels count ===========>" << endl;
+  cout << endl << "<=========== Training Labels Count ===========>" << endl;
   cv::Mat trainLabels = dataSet->getTrainResponses();
   trainLabels.convertTo(trainLabels, CV_32SC1);
   print_label_counts_svm(trainLabels);
 
-  cout << "<============= Test labels count =============>" << endl;
+  cout << "<============= Test Labels Count =============>" << endl;
   cv::Mat testLabels = dataSet->getTestResponses();
   testLabels.convertTo(testLabels, CV_32SC1);
   print_label_counts_svm(testLabels);
@@ -901,7 +912,75 @@ void place_detector_c::train_svm()
   calcErrorOnTestData = true;
   cout << "Test samples: " << svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << endl; 	
 
+  cout << "<====== Confusion Matrix Train Data ===============>" << endl;
+  cv::Mat trainSamples = dataSet->getTrainSamples();
+
+  vector<vector<int>> confMat( indxToLabel_.size(), vector<int>(indxToLabel_.size(), 0) );
+
+  for(int i=0; i<trainSamples.rows; i++)
+  {
+    int predictedLabel = svm->predict(trainSamples.row(i));
+    int actualLabel = trainLabels.at<int>(i);
+
+    confMat[actualLabel][predictedLabel]++;
+  }
+  print_conf_mat(confMat);
+
+  cout << "<====== Confusion Matrix Test Data ===============>" << endl;
+  cv::Mat testSamples = dataSet->getTestSamples();
+
+  confMat = vector<vector<int>> ( indxToLabel_.size(), vector<int>(indxToLabel_.size(), 0) );
+
+  for(int i=0; i<testSamples.rows; i++)
+  {
+    int predictedLabel = svm->predict(testSamples.row(i));
+    int actualLabel = testLabels.at<int>(i);
+
+    confMat[actualLabel][predictedLabel]++;
+  }
+  print_conf_mat(confMat);
+  
   cout << endl;
+}
+// **********************************************************************************
+void place_detector_c::print_conf_mat(const vector<vector<int>>& confMat)
+{
+  int len = confMat.size();
+
+  cout << "\t";
+  for(int i=0;i<len;i++)
+  {
+    map<int,string>::iterator itr = indxToLabel_.find(i);
+    if( itr->second.length() > 2)
+      cout << itr->second[0] << itr->second[1] << itr->second[2] << "\t";
+    else
+      cout << itr->first << "\t";
+  }
+  cout << endl;
+
+  cout << "\t";
+  for(int i=0;i<len;i++)
+    cout << "--" << "\t";
+  cout << endl;
+
+  for(int i=0; i<len; i++)
+  {
+    for(int j=0; j<=len; j++)
+    {
+      if(j==0)
+      {
+        map<int,string>::iterator itr = indxToLabel_.find(i);
+        if( itr->second.length() > 2)
+          cout << itr->second[0] << itr->second[1] << itr->second[2] << "| \t";
+        else
+          cout << itr->first << "| \t";
+        continue;
+      }
+      
+      cout << confMat[i][j-1] << "\t";
+    }
+    cout << endl;
+  }
 }
 
 // **********************************************************************************
@@ -1057,6 +1136,14 @@ void place_detector_c::ros_warn(const string& s, double throttle_s)
 	  ROS_WARN("%s: %s", nh_->getNamespace().c_str(), s.c_str());		
   else
     ROS_WARN_THROTTLE(throttle_s, "%s: %s", nh_->getNamespace().c_str(), s.c_str());
+}
+// **********************************************************************************
+void place_detector_c::ros_error(const string& s, double throttle_s)
+{
+  if(throttle_s < 0.0)
+	  ROS_ERROR("%s: %s", nh_->getNamespace().c_str(), s.c_str());		
+  else
+    ROS_ERROR_THROTTLE(throttle_s, "%s: %s", nh_->getNamespace().c_str(), s.c_str());
 }
 
 // **********************************************************************************
