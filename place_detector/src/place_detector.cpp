@@ -881,7 +881,7 @@ void place_detector_c::train_svm()
   
   cv::Ptr<cv::ml::TrainData> dataSet =  cv::ml::TrainData::loadFromCSV(fileName, headerLineCount, responseStartIdx, responseEndIdx, varTypeSpec, delimiter, missch);
 	
-  double trainToTestRatio = 0.75; bool shuffle = true;
+  double trainToTestRatio = 0.85; bool shuffle = true;
   dataSet->setTrainTestSplitRatio(trainToTestRatio, shuffle); 	   
 
   cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
@@ -891,12 +891,15 @@ void place_detector_c::train_svm()
   //svm->setC(1.0); // for type C_SVC
   svm->setKernel(cv::ml::SVM::POLY);
   svm->setDegree(4); // for kernel POLY
-  svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, 1e6, 1e-12));
+  svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, 1e7, 1e-12));
 
-  svm->trainAuto(dataSet);
+  svm->train(dataSet);
 
   if(svm->isTrained())
+  {
+    svm->save(filePath_+"/svm_model/svm_model.xml");
     ros_info("Training complete");
+  }
   else
     ros_warn("Training failed");
 
@@ -910,11 +913,11 @@ void place_detector_c::train_svm()
   testLabels.convertTo(testLabels, CV_32SC1);
   print_label_counts_svm(testLabels);
   
-  cout << "<====== Missclassification Percentage ========>" << endl;
+  cout << "<================ Accuracy ===================>" << endl;
   bool calcErrorOnTestData = false;
-  cout << "Train samples: " << svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << endl; 
+  cout << "Train samples: " << 100 - svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << "%" << endl; 
   calcErrorOnTestData = true;
-  cout << "Test samples: " << svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << endl; 	
+  cout << "Test samples: " << 100 - svm->calcError(dataSet, calcErrorOnTestData, cv::noArray()) << "%" << endl; 	
 
   cout << "<====== Confusion Matrix Train Data ===============>" << endl;
   cv::Mat trainSamples = dataSet->getTrainSamples();
