@@ -49,7 +49,6 @@ place_detector_c::place_detector_c(ros::NodeHandle* nh)
   // continue for online modes
   else if(mode_ == MODE::RECORD_SCANS)
   {
-    tfListenerPtr_ = new tf2_ros::TransformListener(tfBuffer_);
     scanSub_ = nh->subscribe("scan_in", 1, &place_detector_c::scan_cb, this);
     convHullPub_ = nh->advertise<visualization_msgs::MarkerArray>("conv_hull_out", 1);
 
@@ -104,6 +103,7 @@ void place_detector_c::load_params()
     while(!nh_->getParam("use_pose", usePose));
     if(usePose)
     {
+      tfListenerPtr_ = new tf2_ros::TransformListener(tfBuffer_);
       while(!nh_->getParam("world_frame_id", worldFrameId_));
       while(!nh_->getParam("base_frame_id", baseFrameId_));
       while(!update_rob_pose());
@@ -218,7 +218,7 @@ bool place_detector_c::update_rob_pose()
   }
   catch(tf2::TransformException &ex)
 	{
-		ROS_WARN("%s",ex.what());
+		ros_warn(ex.what(), 2);
     return false;
 	}
 }
@@ -356,7 +356,7 @@ void place_detector_c::publish_raw_scan(const int& row)
   sensor_msgs::LaserScan scanOut;
   scanOut.header.stamp = ros::Time::now();
   scanOut.header.frame_id = scanFrameId_; // TODO: set this in params
-  scanOut.angle_increment = double(2*pi_)/double(rawScansIn_[row].size()+1);
+  scanOut.angle_increment = double(2*pi_)/double(rawScansIn_[row].size()-3);
   scanOut.angle_min = -pi_;
   scanOut.angle_max = pi_ - scanOut.angle_increment;
   scanOut.range_min = 0;
@@ -736,7 +736,7 @@ pair<double,double> place_detector_c::area_perimeter_polygon(int& bottomPtIndx)
   double theta, thetaNxt, xCoord, yCoord, xCoordNxt, yCoordNxt;
 
   double scanAngleMin = -pi_;
-  double scanAngleInc = (2*pi_)/scanR_.size();
+  double scanAngleInc = (2*pi_)/double(scanR_.size());
 
   thetaNxt = scanAngleMin;
   xCoordNxt = scanR_[0]*cos(thetaNxt);
@@ -798,8 +798,8 @@ vector<double> place_detector_c::feature_vec_a(double& computeTime)
   featureVecA.push_back(meanSdev.first);
   featureVecA.push_back(meanSdev.second);
 
-  const double delRange = 5;
-  const double maxRange = 50;
+  const double delRange = 0.15;
+  const double maxRange = 7.5;
 
   for(double i=delRange; i<=maxRange; i+=delRange)
   {
@@ -817,8 +817,8 @@ vector<double> place_detector_c::feature_vec_a(double& computeTime)
   double sdev = sqrt(sqSum / scanR_.size() - featureVecA.back() * featureVecA.back());
   featureVecA.push_back(sdev);
   
-  const double delGap1 = 1.0;
-  const double maxGap1 = 20.0;
+  const double delGap1 = 0.15;
+  const double maxGap1 = 5.0;
 
   for(double i=delGap1; i<=maxGap1; i+=delGap1)
   {
@@ -826,8 +826,8 @@ vector<double> place_detector_c::feature_vec_a(double& computeTime)
     featureVecA.push_back(nGaps);
   }
 
-  const double delGap2 = 5.0;
-  const double maxGap2 = 50.0;
+  const double delGap2 = 0.15;
+  const double maxGap2 = 7.5;
   for(double i=maxGap1+delGap2; i<=maxGap2; i+=delGap2)
   {
     int nGaps = n_gaps(i);
@@ -881,15 +881,19 @@ void place_detector_c::train_svm()
   
   cv::Ptr<cv::ml::TrainData> dataSet =  cv::ml::TrainData::loadFromCSV(fileName, headerLineCount, responseStartIdx, responseEndIdx, varTypeSpec, delimiter, missch);
 	
-  double trainToTestRatio = 0.85; bool shuffle = true;
+  double trainToTestRatio = 0.75; bool shuffle = true;
   dataSet->setTrainTestSplitRatio(trainToTestRatio, shuffle); 	   
 
   cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
   svm->setType(cv::ml::SVM::C_SVC);
-  svm->setKernel(cv::ml::SVM::RBF);
-  svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, 100, 1e-6));
+  //svm->setNu(0.85); // for type NU_SVC
+  //svm->setP(0.1); // for type EPS_SVR
+  //svm->setC(1.0); // for type C_SVC
+  svm->setKernel(cv::ml::SVM::POLY);
+  svm->setDegree(4); // for kernel POLY
+  svm->setTermCriteria(cv::TermCriteria(cv::TermCriteria::MAX_ITER, 1e6, 1e-12));
 
-  svm->train(dataSet);
+  svm->trainAuto(dataSet);
 
   if(svm->isTrained())
     ros_info("Training complete");
@@ -1024,7 +1028,7 @@ void place_detector_c::publish_convex_hull(const vector<pair<double,double>>& co
   marker.type = visualization_msgs::Marker::LINE_STRIP;
   marker.action = visualization_msgs::Marker::MODIFY;
   marker.pose.orientation.w = 1;
-  marker.scale.x = 0.25; marker.scale.y = 0.25; marker.scale.z = 0.25;
+  marker.scale.x = 0.1; marker.scale.y = 0.1; marker.scale.z = 0.1;
   marker.color.r = 1; marker.color.g = 1; marker.color.b = 1; marker.color.a = 1;
 
   for(int i=0; i<convHullPts.size(); i++)
@@ -1077,7 +1081,7 @@ void place_detector_c::publish_convex_hull(const vector<pair<double,double>>& co
   marker.pose.position.y = scanP_[bottomPtIndx].second;
   marker.pose.position.z = 0;
   marker.pose.orientation.w = 1;
-  marker.scale.x = 0.75; marker.scale.y = 0.75; marker.scale.z = 0.75;
+  marker.scale.x = 0.5; marker.scale.y = 0.5; marker.scale.z = 0.5;
   marker.color.r = 1; marker.color.g = 1; marker.color.b = 1; marker.color.a = 1;
 
   markerArr.markers.push_back(marker);
