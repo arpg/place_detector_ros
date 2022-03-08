@@ -395,6 +395,49 @@ void place_detector_c::scan_cb(const sensor_msgs::LaserScan& scanMsg)
 
     dataFile_ << endl;
   }
+  else if(mode_ == MODE::REALTIME_PREDICTION)
+  {
+    scanR_ = vector<double>(scanMsg.ranges.begin(), scanMsg.ranges.end());
+
+    if(!fill_gaps_in_scan())
+    {
+      ros_warn("Invalid laser scan");
+      return;
+    }
+
+    double computeTime = 0;
+    vector<double> featureVecA = feature_vec_a(computeTime);
+    vector<double> featureVecB = feature_vec_b(computeTime);
+
+    featureVecA.insert(featureVecA.end(), featureVecB.begin(), featureVecB.end());
+    cv::Mat featureCvVec(1, featureVecA.size(), CV_64F, featureVecA.data());
+    featureCvVec.convertTo(featureCvVec, CV_32F);
+
+    //cout << "featureCvVec.rows: " << featureCvVec.reshape(1,1).rows << endl;
+    //cout << "featureCvVec.col: " << featureCvVec.reshape(1,1).cols << endl;
+
+    cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::load(filePath_+"/svm_model/svm_model.xml");
+
+    if(!svm->isTrained())
+    {
+      ros_warn("Loaded svm is not trained");
+      return;
+    }
+
+    int predictedLabel = svm->predict(featureCvVec);
+
+    map<int, string>::iterator itr = indxToLabel_.find(predictedLabel);
+    if(itr == indxToLabel_.end()) // not found
+      ros_warn("Invalid label");
+    else
+    {
+      std_msgs::String str;
+      str.data = itr->second;
+      labelPub_.publish(str);
+    }
+  }
+  else
+    ros_warn("Invalid mode");
     
 }
 
