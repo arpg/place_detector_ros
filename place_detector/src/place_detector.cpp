@@ -56,6 +56,14 @@ place_detector_c::place_detector_c(ros::NodeHandle* nh)
   }
   else if(mode_ == MODE::REALTIME_PREDICTION)
   {
+    svm_ = cv::ml::SVM::load(filePath_+"/svm_model/svm_model.xml");
+
+    if(!svm_->isTrained())
+    {
+      ros_warn("Loaded svm is not trained");
+      return;
+    }
+
     scanSub_ = nh->subscribe("scan_in", 1, &place_detector_c::scan_cb, this);
     labelPub_ = nh->advertise<std_msgs::String>("label_out", 1);
 
@@ -413,18 +421,7 @@ void place_detector_c::scan_cb(const sensor_msgs::LaserScan& scanMsg)
     cv::Mat featureCvVec(1, featureVecA.size(), CV_64F, featureVecA.data());
     featureCvVec.convertTo(featureCvVec, CV_32F);
 
-    //cout << "featureCvVec.rows: " << featureCvVec.reshape(1,1).rows << endl;
-    //cout << "featureCvVec.col: " << featureCvVec.reshape(1,1).cols << endl;
-
-    cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::load(filePath_+"/svm_model/svm_model.xml");
-
-    if(!svm->isTrained())
-    {
-      ros_warn("Loaded svm is not trained");
-      return;
-    }
-
-    int predictedLabel = svm->predict(featureCvVec);
+    int predictedLabel = svm_->predict(featureCvVec);
 
     map<int, string>::iterator itr = indxToLabel_.find(predictedLabel);
     if(itr == indxToLabel_.end()) // not found

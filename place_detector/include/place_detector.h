@@ -109,6 +109,8 @@ private:
   tf2_ros::Buffer tfBuffer_; // used for record_scans mode
   tf2_ros::TransformListener* tfListenerPtr_; // used for record_scans mode
 
+  cv::Ptr<cv::ml::SVM> svm_; // used for realtime_prediction mode
+
 public:
   place_detector_c(ros::NodeHandle* nh);
   ~place_detector_c();
