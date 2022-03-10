@@ -110,6 +110,8 @@ private:
   tf2_ros::TransformListener* tfListenerPtr_; // used for record_scans mode
 
   cv::Ptr<cv::ml::SVM> svm_; // used for realtime_prediction mode
+  string lastLabel_ = ""; // used for realtime_prediction mode
+  int labelCount_ = 0; // used for realtime_prediction mode
 
 public:
   place_detector_c(ros::NodeHandle* nh);

@@ -425,12 +425,28 @@ void place_detector_c::scan_cb(const sensor_msgs::LaserScan& scanMsg)
 
     map<int, string>::iterator itr = indxToLabel_.find(predictedLabel);
     if(itr == indxToLabel_.end()) // not found
+    {
+      lastLabel_ = "";
+      labelCount_ = 0;
       ros_warn("Invalid label");
+      return;
+    }
+
+    if(itr->second == lastLabel_)
+      labelCount_++;
     else
+    {
+      labelCount_ = 1;
+      lastLabel_ = itr->second;
+    }
+
+    if(labelCount_ >= 4)
     {
       std_msgs::String str;
       str.data = itr->second;
       labelPub_.publish(str);
+      lastLabel_ = "";
+      labelCount_ = 0;
     }
   }
   else
