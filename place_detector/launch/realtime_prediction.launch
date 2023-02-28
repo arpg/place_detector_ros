@@ -3,7 +3,7 @@
 <arg name = "mode" default = "realtime_prediction"/>
 <arg name = "file_path" default = "$(find place_detector)/data"/>
 <arg name = "rviz_config" default = "$(find place_detector)/rviz/realtime_prediction.rviz"/>
-<arg name = "bag_file_path" default = "/home/shakeeb/Downloads/D02_ouster_imu_2021-09-27-12-06-12_0.bag"/>
+<arg name = "bag_file_path" default = "$(find place_detector)/bags/EC_data.bag"/>
 
 <arg name = "angle_min" value = "-3.141592653589793238" doc="negative 180 degrees"/>
 <arg name = "angle_inc" value = "$(eval 3.141592653589793238/180)" doc="1 degree resolution"/>
@@ -16,11 +16,11 @@
   <param name="file_path" value="$(arg file_path)"/>
 </node>
 
-<node name="ptcloud_throttler" type="throttle" pkg="topic_tools" args="messages /D02/horiz/os_cloud_node/points 5 /D02/horiz/os_cloud_node/points_throttled" />
+<node name="ptcloud_throttler" type="throttle" pkg="topic_tools" args="messages ouster/points 5 ouster/points_throttled"/>
 
 <node name="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" pkg="pointcloud_to_laserscan" output="screen">
+  <remap from = "cloud_in" to = "ouster/points_throttled"/>
   <remap from = "scan" to = "/place_detector/scan_in"/>
-  <remap from = "cloud_in" to = "/D02/horiz/os_cloud_node/points_throttled"/>
 
   <param name="angle_min" value = "$(arg angle_min)"/>
   <param name="angle_max" value = "$(eval angle_max)"/>
@@ -33,7 +33,5 @@
 </node>
 
 <node pkg="rviz" type="rviz" name="place_detector_ui" output="screen" args="-d $(arg rviz_config)"/>
-
-<node pkg="rosbag" type="play" name="rosbag_play" output="screen" args="--clock $(arg bag_file_path) --pause -s 250"/>
-
+<node pkg="rosbag" type="play" name="rosbag_play" output="screen" args="--clock $(arg bag_file_path) --pause"/>
 </launch>

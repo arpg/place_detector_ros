@@ -77,7 +77,7 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.009999999776482582
       Style: Flat Squares
-      Topic: /D02/horiz/os_cloud_node/points_throttled
+      Topic: /ouster/points
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -123,13 +123,13 @@ Visualization Manager:
       Length: 2.5
       Name: Axes
       Radius: 0.5
-      Reference Frame: D02/horiz_ouster_sensor
+      Reference Frame: os_lidar
       Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
     Default Light: true
-    Fixed Frame: D02/horiz_ouster_sensor
+    Fixed Frame: os_lidar
     Frame Rate: 30
   Name: root
   Tools:

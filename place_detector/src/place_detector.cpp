@@ -936,9 +936,9 @@ void place_detector_c::train_svm()
   cv::String varTypeSpec = cv::String();
   
   cv::Ptr<cv::ml::TrainData> dataSet =  cv::ml::TrainData::loadFromCSV(fileName, headerLineCount, responseStartIdx, responseEndIdx, varTypeSpec, delimiter, missch);
-	
+  
   double trainToTestRatio = 0.85; bool shuffle = true;
-  dataSet->setTrainTestSplitRatio(trainToTestRatio, shuffle); 	   
+  dataSet->setTrainTestSplitRatio(trainToTestRatio, shuffle);
 
   cv::Ptr<cv::ml::SVM> svm = cv::ml::SVM::create();
   svm->setType(cv::ml::SVM::C_SVC);

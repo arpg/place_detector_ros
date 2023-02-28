@@ -57,7 +57,7 @@ void scan_cb(const sensor_msgs::LaserScan& scanMsg)
 	dataFile_ << mostRecentLabel_;
 
 	for(int i=0; i<scanMsg.ranges.size(); i++)
-		dataFile << ", " << to_string(scanMsg.ranges[i]); 
+		dataFile_ << ", " << to_string(scanMsg.ranges[i]); 
 		
 	dataFile_ << endl;
 }
